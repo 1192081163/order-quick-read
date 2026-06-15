@@ -13,6 +13,8 @@ from email_order_reader.models import AttachmentParseResult, ColumnAliases, Orde
 
 
 HEADER_SCAN_LIMIT = 20
+MIN_HEURISTIC_MATCHES = 2
+MIN_REASONABLE_YEAR = 2000
 DEADLINE_PATTERNS = (
     r"^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$",
     r"^(\d{4})年(\d{1,2})月(\d{1,2})日$",
@@ -166,33 +168,33 @@ def _guess_columns(rows: Sequence[Sequence[object]]) -> tuple[int, int, int] | N
         return None
 
     max_columns = max((len(row) for row in sample_rows), default=0)
-    order_scores = [0] * max_columns
-    deadline_scores = [0] * max_columns
+    best_pair: tuple[int, int] | None = None
+    best_score = 0
+    tied = False
 
-    for row in sample_rows:
-        for column_index in range(max_columns):
-            value = _get_cell(row, column_index)
-            if _is_order_value(value):
-                order_scores[column_index] += 1
-            if _is_deadline_value(value):
-                deadline_scores[column_index] += 1
+    for order_col in range(max_columns):
+        for deadline_col in range(max_columns):
+            if order_col == deadline_col:
+                continue
 
-    order_col = _best_scored_column(order_scores)
-    deadline_col = _best_scored_column(deadline_scores)
-    if order_col is None or deadline_col is None or order_col == deadline_col:
+            paired_score = sum(
+                1
+                for row in sample_rows
+                if _is_order_value(_get_cell(row, order_col))
+                and _is_deadline_value(_get_cell(row, deadline_col))
+            )
+
+            if paired_score > best_score:
+                best_pair = (order_col, deadline_col)
+                best_score = paired_score
+                tied = False
+            elif paired_score == best_score and paired_score >= MIN_HEURISTIC_MATCHES:
+                tied = True
+
+    if best_pair is None or best_score < MIN_HEURISTIC_MATCHES or tied:
         return None
 
-    return 0, order_col, deadline_col
-
-
-def _best_scored_column(scores: Sequence[int]) -> int | None:
-    best_score = 0
-    best_index: int | None = None
-    for index, score in enumerate(scores):
-        if score > best_score:
-            best_score = score
-            best_index = index
-    return best_index
+    return 0, best_pair[0], best_pair[1]
 
 
 def _is_order_value(value: object) -> bool:
@@ -248,9 +250,9 @@ def _normalize_deadline(value: object) -> str:
     if value is None:
         return ""
     if isinstance(value, datetime):
-        return value.date().isoformat()
+        return _date_to_iso(value.date())
     if isinstance(value, date):
-        return value.isoformat()
+        return _date_to_iso(value)
 
     text = _cell_to_text(value)
     if not text:
@@ -261,8 +263,14 @@ def _normalize_deadline(value: object) -> str:
         if match:
             year, month, day = (int(part) for part in match.groups())
             try:
-                return date(year, month, day).isoformat()
+                return _date_to_iso(date(year, month, day))
             except ValueError:
                 return ""
 
     return text
+
+
+def _date_to_iso(value: date) -> str:
+    if value.year < MIN_REASONABLE_YEAR:
+        return ""
+    return value.isoformat()

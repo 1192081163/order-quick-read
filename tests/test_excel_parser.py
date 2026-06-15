@@ -48,6 +48,30 @@ def make_xls(headers, rows):
     return "orders.xls", stream.getvalue()
 
 
+def make_xls_with_native_dates(headers, rows):
+    workbook = xlwt.Workbook()
+    sheet = workbook.add_sheet("Orders")
+    date_style = xlwt.XFStyle()
+    date_style.num_format_str = "YYYY-MM-DD"
+    time_style = xlwt.XFStyle()
+    time_style.num_format_str = "HH:MM"
+
+    for column, value in enumerate(headers):
+        sheet.write(0, column, value)
+    for row_index, row in enumerate(rows, start=1):
+        for column, value in enumerate(row):
+            if isinstance(value, tuple) and value[0] == "date":
+                sheet.write(row_index, column, value[1], date_style)
+            elif isinstance(value, tuple) and value[0] == "time":
+                sheet.write(row_index, column, value[1], time_style)
+            else:
+                sheet.write(row_index, column, value)
+
+    stream = BytesIO()
+    workbook.save(stream)
+    return "orders.xls", stream.getvalue()
+
+
 def test_parse_xlsx_with_chinese_headers():
     filename, content = make_xlsx(
         ["订单号", "交单日期", "备注"],
@@ -162,4 +186,35 @@ def test_parse_detects_columns_without_alias_headers():
     assert [(row.order_number, row.deadline) for row in result.rows] == [
         ("PO-5005", "2026-09-01"),
         ("PO-5006", "2026-09-02"),
+    ]
+
+
+def test_parse_does_not_guess_unrelated_single_customer_date_row():
+    filename, content = make_xlsx(
+        ["Customer ID", "Last Contact"],
+        [["A123", "2026-01-15"]],
+    )
+
+    result = parse_excel_attachment(filename, content, ColumnAliases.default())
+
+    assert result.rows == []
+    assert result.warnings == ["orders.xlsx：未识别订单号列或截至时间列"]
+
+
+def test_parse_xls_native_date_cell_and_rejects_time_only_cells():
+    filename, content = make_xls_with_native_dates(
+        ["编号", "时间"],
+        [
+            ["PO-7007", ("date", datetime(2026, 8, 9))],
+            ["PO-TIME", ("time", datetime(1899, 12, 31, 8, 30))],
+            ["PO-8008", ("date", datetime(2026, 8, 10))],
+        ],
+    )
+
+    result = parse_excel_attachment(filename, content, ColumnAliases.default())
+
+    assert result.warnings == []
+    assert [(row.order_number, row.deadline) for row in result.rows] == [
+        ("PO-7007", "2026-08-09"),
+        ("PO-8008", "2026-08-10"),
     ]
