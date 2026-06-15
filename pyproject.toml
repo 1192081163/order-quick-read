@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "email-order-reader"
+version = "0.1.0"
+description = "Desktop app for reading IMAP email Excel order attachments."
+requires-python = ">=3.11"
+dependencies = [
+  "PySide6>=6.7,<7",
+  "openpyxl>=3.1,<4",
+  "xlrd>=2.0,<3",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8,<9",
+  "pytest-qt>=4.4,<5",
+  "xlwt>=1.3,<2",
+  "pyinstaller>=6,<7",
+]
+
+[project.scripts]
+email-order-reader = "email_order_reader.app:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
