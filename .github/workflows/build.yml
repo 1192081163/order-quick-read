@@ -17,11 +17,13 @@ jobs:
         platform:
           - name: Windows
             os: windows-latest
+            shell: pwsh
             artifact: email-order-reader-windows
             artifact_path: dist/Email Order Reader
             build_command: .\scripts\build_windows.ps1
           - name: macOS
             os: macos-latest
+            shell: bash
             artifact: email-order-reader-macos
             artifact_path: dist/Email Order Reader.app
             build_command: bash scripts/build_macos.sh
@@ -48,7 +50,7 @@ jobs:
         run: python -m pytest -q
 
       - name: Build package
-        shell: ${{ runner.os == 'Windows' && 'pwsh' || 'bash' }}
+        shell: ${{ matrix.platform.shell }}
         run: ${{ matrix.platform.build_command }}
 
       - name: Upload package
