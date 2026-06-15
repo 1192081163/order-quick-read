@@ -8,6 +8,8 @@ def test_github_actions_builds_windows_and_macos_artifacts():
     content = workflow.read_text(encoding="utf-8")
     assert "workflow_dispatch:" in content
     assert "push:" in content
+    assert "build-windows:" in content
+    assert "build-macos:" in content
     assert "windows-latest" in content
     assert "macos-latest" in content
     assert "shell: pwsh" in content
@@ -16,7 +18,7 @@ def test_github_actions_builds_windows_and_macos_artifacts():
     assert "bash scripts/build_macos.sh" in content
     assert "actions/upload-artifact@v4" in content
     assert "dist/Email Order Reader" in content
-    assert "runner.os == 'Windows' &&" not in content
+    assert "matrix:" not in content
 
 
 def test_macos_build_script_bundles_excel_parser_dependencies():
