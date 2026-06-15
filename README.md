@@ -9,8 +9,16 @@ Minimal desktop app for scanning recent IMAP email attachments and showing order
 - Reads Excel attachments with `.xlsx`, `.xlsm`, or `.xls` extensions.
 - Shows only two columns: `订单号` and `截至时间`.
 - Shows only email address and authorization code in the mailbox settings area, then collapses it after both are filled.
-- Does not save mailbox credentials.
+- Saves mailbox email address and authorization code locally so they are restored on the next launch.
 - Does not save scan history.
+
+Settings are stored in a local JSON file:
+
+```text
+~/.email-order-reader/settings.json
+```
+
+The authorization code is stored in this local file, not in the system keychain.
 
 ## Development
 

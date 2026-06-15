@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from PySide6.QtCore import QObject, QThread, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -20,6 +22,7 @@ from PySide6.QtWidgets import (
 from email_order_reader.email_client import ImapEmailClient
 from email_order_reader.models import ColumnAliases, ImapConfig, ScanResult
 from email_order_reader.scan_service import OrderScanService
+from email_order_reader.settings import AppSettings, load_settings, save_settings
 
 
 DEFAULT_IMAP_SERVER = "imap.exmail.qq.com"
@@ -45,12 +48,14 @@ class ScanWorker(QObject):
 
 
 class MainWindow(QMainWindow):
-    def __init__(self) -> None:
+    def __init__(self, settings_path: Path | None = None) -> None:
         super().__init__()
         self.setWindowTitle("邮件订单读取")
         self.resize(760, 520)
         self.thread: QThread | None = None
         self.worker: ScanWorker | None = None
+        self.settings_path = settings_path
+        self._loading_settings = True
 
         root = QWidget()
         self.setCentralWidget(root)
@@ -117,6 +122,10 @@ class MainWindow(QMainWindow):
         self.refresh_button.clicked.connect(self.start_scan)
         self.summary_refresh_button.clicked.connect(self.start_scan)
 
+        self.load_saved_settings()
+        self._loading_settings = False
+        self.update_settings_visibility()
+
     def required_fields_present(self) -> bool:
         return all(
             field.text().strip()
@@ -125,6 +134,7 @@ class MainWindow(QMainWindow):
 
     def update_settings_visibility(self) -> None:
         if self.required_fields_present():
+            self.save_current_settings()
             self.collapse_settings()
 
     def collapse_settings(self) -> None:
@@ -155,6 +165,22 @@ class MainWindow(QMainWindow):
             port=DEFAULT_IMAP_PORT,
             email=self.email_input.text().strip(),
             auth_code=self.auth_code_input.text(),
+        )
+
+    def load_saved_settings(self) -> None:
+        settings = load_settings(self.settings_path)
+        self.email_input.setText(settings.email)
+        self.auth_code_input.setText(settings.auth_code)
+
+    def save_current_settings(self) -> None:
+        if self._loading_settings:
+            return
+        save_settings(
+            AppSettings(
+                email=self.email_input.text().strip(),
+                auth_code=self.auth_code_input.text(),
+            ),
+            self.settings_path,
         )
 
     def start_scan(self) -> None:

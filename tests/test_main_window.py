@@ -86,3 +86,32 @@ def test_table_renders_order_rows(qtbot):
     assert window.table.item(0, 0).text() == "PO-7007"
     assert window.table.item(0, 1).text() == "2026-11-02"
     assert "读取 1 条订单" in window.status_label.text()
+
+
+def test_window_loads_saved_credentials_and_collapses_settings(qtbot, tmp_path):
+    settings_path = tmp_path / "settings.json"
+    settings_path.write_text('{"email": "saved@example.com", "auth_code": "saved-secret"}', encoding="utf-8")
+
+    window = MainWindow(settings_path=settings_path)
+    qtbot.addWidget(window)
+
+    assert window.email_input.text() == "saved@example.com"
+    assert window.auth_code_input.text() == "saved-secret"
+    assert window.settings_panel.isHidden()
+    assert not window.summary_panel.isHidden()
+
+
+def test_window_saves_credentials_after_required_fields_are_filled(qtbot, tmp_path):
+    settings_path = tmp_path / "settings.json"
+    window = MainWindow(settings_path=settings_path)
+    qtbot.addWidget(window)
+
+    window.email_input.setText("buyer@example.com")
+    window.auth_code_input.setText("secret")
+
+    assert settings_path.read_text(encoding="utf-8") == (
+        '{\n'
+        '  "email": "buyer@example.com",\n'
+        '  "auth_code": "secret"\n'
+        '}'
+    )
