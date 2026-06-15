@@ -12,6 +12,7 @@ from email_order_reader.models import AttachmentParseResult, ColumnAliases, Orde
 
 
 HEADER_SCAN_LIMIT = 20
+SheetRows = list[list[object]]
 
 
 def parse_excel_attachment(
@@ -23,30 +24,54 @@ def parse_excel_attachment(
     aliases = aliases or ColumnAliases.default()
 
     try:
-        rows = _read_rows(filename, content)
+        sheets = _read_sheets(filename, content)
     except Exception as exc:
         return AttachmentParseResult(filename=filename, warnings=[f"{filename}：无法读取Excel附件：{exc}"])
 
-    return _parse_rows(filename, rows, aliases, message_subject)
+    return _parse_sheets(filename, sheets, aliases, message_subject)
 
 
-def _read_rows(filename: str, content: bytes) -> list[list[object]]:
+def _read_sheets(filename: str, content: bytes) -> list[SheetRows]:
     suffix = Path(filename).suffix.lower()
     if suffix in {".xlsx", ".xlsm"}:
-        return _read_openpyxl_rows(content)
+        return _read_openpyxl_sheets(content)
     return []
 
 
-def _read_openpyxl_rows(content: bytes) -> list[list[object]]:
+def _read_openpyxl_sheets(content: bytes) -> list[SheetRows]:
     workbook = load_workbook(BytesIO(content), read_only=True, data_only=True)
-    rows: list[list[object]] = []
+    sheets: list[SheetRows] = []
     try:
         for sheet in workbook.worksheets:
+            rows: SheetRows = []
             for row in sheet.iter_rows(values_only=True):
                 rows.append(list(row))
+            sheets.append(rows)
     finally:
         workbook.close()
-    return rows
+    return sheets
+
+
+def _parse_sheets(
+    filename: str,
+    sheets: Sequence[Sequence[Sequence[object]]],
+    aliases: ColumnAliases,
+    message_subject: str,
+) -> AttachmentParseResult:
+    parsed_rows: list[OrderRow] = []
+    found_header = False
+
+    for rows in sheets:
+        sheet_rows = _parse_rows(filename, rows, aliases, message_subject)
+        if sheet_rows is None:
+            continue
+        found_header = True
+        parsed_rows.extend(sheet_rows)
+
+    if not found_header:
+        return AttachmentParseResult(filename=filename, warnings=[f"{filename}：未识别订单号列或截至时间列"])
+
+    return AttachmentParseResult(filename=filename, rows=parsed_rows)
 
 
 def _parse_rows(
@@ -54,10 +79,10 @@ def _parse_rows(
     rows: Sequence[Sequence[object]],
     aliases: ColumnAliases,
     message_subject: str,
-) -> AttachmentParseResult:
+) -> list[OrderRow] | None:
     header_match = _find_header(rows, aliases)
     if header_match is None:
-        return AttachmentParseResult(filename=filename, warnings=[f"{filename}：未识别订单号列或截至时间列"])
+        return None
 
     header_index, order_col, deadline_col = header_match
     parsed_rows: list[OrderRow] = []
@@ -77,7 +102,7 @@ def _parse_rows(
             )
         )
 
-    return AttachmentParseResult(filename=filename, rows=parsed_rows)
+    return parsed_rows
 
 
 def _find_header(
@@ -143,6 +168,9 @@ def _normalize_deadline(value: object) -> str:
         match = re.match(pattern, text)
         if match:
             year, month, day = (int(part) for part in match.groups())
-            return date(year, month, day).isoformat()
+            try:
+                return date(year, month, day).isoformat()
+            except ValueError:
+                return ""
 
     return text
