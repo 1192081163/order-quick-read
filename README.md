@@ -11,6 +11,7 @@ Order Quick Read is a minimal desktop app for scanning IMAP email attachments an
 - Sorts orders by deadline with the nearest deadline first.
 - Auto-refreshes every 30 seconds after mailbox settings are saved.
 - Shows a desktop tray notification and highlights rows when new or updated orders are found.
+- Checks GitHub Releases for updates. After a new package is downloaded, the app asks before installing, then opens the new package, quits the old app, and tries to delete the old app file.
 - Shows only email address and authorization code in the mailbox settings area, then collapses it after both are filled.
 - Saves mailbox email address and authorization code locally so they are restored on the next launch.
 - Saves a local lightweight order cache for faster refreshes; it does not store email bodies or attachment files.

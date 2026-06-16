@@ -2,7 +2,7 @@ from datetime import date, datetime, timezone
 
 import pytest
 from PySide6.QtCore import QDate
-from PySide6.QtWidgets import QLabel, QMessageBox, QSystemTrayIcon
+from PySide6.QtWidgets import QApplication, QLabel, QMessageBox, QSystemTrayIcon
 
 import email_order_reader.settings as settings_module
 import email_order_reader.ui.main_window as main_window_module
@@ -615,16 +615,55 @@ def test_window_ignores_update_check_failures(qtbot):
     assert window.status_label.text() == original_status
 
 
-def test_window_opens_downloaded_update_file(qtbot, monkeypatch, tmp_path):
+def test_window_prompts_before_installing_downloaded_update(qtbot, monkeypatch, tmp_path):
     window = MainWindow(check_updates_on_start=False)
     qtbot.addWidget(window)
     download_path = tmp_path / "OrderQuickRead.exe"
     download_path.write_bytes(b"fake exe")
-    opened_files = []
+    installed_files = []
+    quit_calls = []
 
-    monkeypatch.setattr(main_window_module.QDesktopServices, "openUrl", lambda url: opened_files.append(url.toLocalFile()) or True)
+    monkeypatch.setattr(
+        main_window_module.QMessageBox,
+        "question",
+        lambda *args, **kwargs: QMessageBox.StandardButton.Yes,
+    )
+    monkeypatch.setattr(
+        main_window_module,
+        "install_downloaded_update",
+        lambda path: installed_files.append(path),
+    )
+    monkeypatch.setattr(QApplication, "quit", lambda: quit_calls.append(True))
 
     window.handle_update_download_finished(download_path)
 
-    assert opened_files == [str(download_path)]
+    assert installed_files == [download_path]
+    assert quit_calls == [True]
     assert "新版已下载" in window.status_label.text()
+
+
+def test_window_keeps_running_when_downloaded_update_install_is_declined(qtbot, monkeypatch, tmp_path):
+    window = MainWindow(check_updates_on_start=False)
+    qtbot.addWidget(window)
+    download_path = tmp_path / "OrderQuickRead.exe"
+    download_path.write_bytes(b"fake exe")
+    installed_files = []
+    quit_calls = []
+
+    monkeypatch.setattr(
+        main_window_module.QMessageBox,
+        "question",
+        lambda *args, **kwargs: QMessageBox.StandardButton.No,
+    )
+    monkeypatch.setattr(
+        main_window_module,
+        "install_downloaded_update",
+        lambda path: installed_files.append(path),
+    )
+    monkeypatch.setattr(QApplication, "quit", lambda: quit_calls.append(True))
+
+    window.handle_update_download_finished(download_path)
+
+    assert installed_files == []
+    assert quit_calls == []
+    assert str(download_path) in window.status_label.text()

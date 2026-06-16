@@ -31,6 +31,7 @@ from email_order_reader.email_client import ImapEmailClient
 from email_order_reader.models import ImapConfig, ScanResult
 from email_order_reader.scan_service import OrderScanService
 from email_order_reader.settings import AppSettings, load_settings, save_settings
+from email_order_reader.self_update import install_downloaded_update
 from email_order_reader.updates import UpdateInfo, check_for_update, download_update_asset
 from email_order_reader.ui.icons import create_app_icon
 
@@ -492,7 +493,23 @@ class MainWindow(QMainWindow):
 
     def handle_update_download_finished(self, download_path: Path) -> None:
         self.status_label.setText(f"新版已下载：{download_path}")
-        QDesktopServices.openUrl(QUrl.fromLocalFile(str(download_path)))
+        answer = QMessageBox.question(
+            self,
+            "新版已下载",
+            "新版已下载，是否立即安装？\n\n安装会打开新版，并自动关闭当前旧版本。",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+
+        try:
+            install_downloaded_update(download_path)
+        except Exception as exc:
+            QMessageBox.warning(self, "安装新版失败", f"无法打开新版：{exc}")
+            return
+
+        QApplication.quit()
 
     def handle_update_download_error(self, message: str) -> None:
         self.status_label.setText(f"新版下载失败：{message}")
