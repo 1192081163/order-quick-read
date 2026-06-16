@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QThread, QTimer, Signal
@@ -9,6 +9,7 @@ from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
+    QComboBox,
     QFormLayout,
     QHBoxLayout,
     QHeaderView,
@@ -73,6 +74,7 @@ class MainWindow(QMainWindow):
         self._loading_settings = True
         self.editing_settings = False
         self.seen_orders: dict[str, str] = {}
+        self.order_rows: list = []
         self.has_scan_baseline = False
         self.highlighted_order_numbers: set[str] = set()
         self.tray_icon: QSystemTrayIcon | None = None
@@ -117,12 +119,17 @@ class MainWindow(QMainWindow):
         summary_layout.setSpacing(10)
         self.summary_label = QLabel("")
         self.summary_label.setObjectName("summaryLabel")
+        self.filter_combo = QComboBox()
+        self.filter_combo.addItem("全部", "all")
+        self.filter_combo.addItem("今日", "today")
+        self.filter_combo.addItem("本周", "week")
         self.summary_refresh_button = QPushButton("刷新")
         self.summary_refresh_button.setProperty("kind", "primary")
         self.edit_settings_button = QPushButton("修改邮箱设置")
         self.edit_settings_button.setProperty("kind", "secondary")
         summary_layout.addWidget(self.summary_label)
         summary_layout.addStretch()
+        summary_layout.addWidget(self.filter_combo)
         summary_layout.addWidget(self.summary_refresh_button)
         summary_layout.addWidget(self.edit_settings_button)
         self.summary_panel.hide()
@@ -152,6 +159,7 @@ class MainWindow(QMainWindow):
         self.save_settings_button.clicked.connect(self.finish_editing_settings)
         self.refresh_button.clicked.connect(lambda: self.start_scan(full_scan=True))
         self.summary_refresh_button.clicked.connect(lambda: self.start_scan(full_scan=False))
+        self.filter_combo.currentIndexChanged.connect(lambda _index: self.render_order_rows())
 
         self.apply_style()
         self.load_saved_settings()
@@ -273,11 +281,15 @@ class MainWindow(QMainWindow):
         self.worker = None
 
     def apply_scan_result(self, result: ScanResult) -> None:
-        sorted_rows = _sorted_order_rows(result.rows)
-        self.highlighted_order_numbers = self.detect_order_changes(sorted_rows)
+        self.order_rows = _sorted_order_rows(result.rows)
+        self.highlighted_order_numbers = self.detect_order_changes(self.order_rows)
+        self.render_order_rows()
+        self.status_label.setText(_format_scan_status(result, auto_refreshing=self.auto_refresh_timer.isActive()))
 
+    def render_order_rows(self) -> None:
+        display_rows = _filter_order_rows(self.order_rows, self.filter_combo.currentData() or "all")
         self.table.setRowCount(0)
-        for row in sorted_rows:
+        for row in display_rows:
             row_index = self.table.rowCount()
             self.table.insertRow(row_index)
             order_item = QTableWidgetItem(row.order_number)
@@ -287,8 +299,6 @@ class MainWindow(QMainWindow):
                 deadline_item.setBackground(HIGHLIGHT_COLOR)
             self.table.setItem(row_index, 0, order_item)
             self.table.setItem(row_index, 1, deadline_item)
-
-        self.status_label.setText(_format_scan_status(result, auto_refreshing=self.auto_refresh_timer.isActive()))
 
     def apply_scan_error(self, message: str) -> None:
         self.status_label.setText(f"扫描失败：{message}")
@@ -467,17 +477,33 @@ def _format_scan_status(result: ScanResult, auto_refreshing: bool = False) -> st
 
 
 def _sorted_order_rows(rows: list) -> list:
-    today = date.today()
-    return sorted(rows, key=lambda row: _order_row_sort_key(row, today))
+    return sorted(rows, key=_order_row_sort_key)
 
 
-def _order_row_sort_key(row, today: date) -> tuple:
+def _order_row_sort_key(row) -> tuple:
     deadline = _parse_deadline_date(row.deadline)
     if deadline is None:
-        return (1, datetime.max.date(), row.deadline, row.order_number)
+        return (1, 0, row.deadline, row.order_number)
 
-    days_from_today = abs((deadline - today).days)
-    return (0, days_from_today, deadline, row.order_number)
+    return (0, -deadline.toordinal(), row.order_number)
+
+
+def _filter_order_rows(rows: list, filter_mode: str) -> list:
+    if filter_mode == "today":
+        today = date.today()
+        return [row for row in rows if _parse_deadline_date(row.deadline) == today]
+
+    if filter_mode == "week":
+        today = date.today()
+        week_start = today - timedelta(days=today.weekday())
+        week_end = week_start + timedelta(days=6)
+        return [
+            row
+            for row in rows
+            if (deadline := _parse_deadline_date(row.deadline)) is not None and week_start <= deadline <= week_end
+        ]
+
+    return rows
 
 
 def _parse_deadline_date(value: str) -> date | None:

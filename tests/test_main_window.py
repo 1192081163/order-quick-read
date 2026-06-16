@@ -139,8 +139,8 @@ def test_table_sorts_order_rows_by_deadline(qtbot):
     )
 
     assert [window.table.item(row, 0).text() for row in range(window.table.rowCount())] == [
-        "PO-EARLY",
         "PO-LATE",
+        "PO-EARLY",
         "PO-UNKNOWN",
     ]
 
@@ -162,19 +162,13 @@ def test_table_sorts_legacy_deadline_text_formats(qtbot):
     )
 
     assert [window.table.item(row, 0).text() for row in range(window.table.rowCount())] == [
-        "PO-CHINESE",
         "PO-SLASH",
+        "PO-CHINESE",
         "PO-UNKNOWN",
     ]
 
 
-def test_table_sorts_overdue_deadlines_by_closest_to_today(qtbot, monkeypatch):
-    class FixedDate(date):
-        @classmethod
-        def today(cls):
-            return cls(2026, 6, 16)
-
-    monkeypatch.setattr(main_window_module, "date", FixedDate)
+def test_table_sorts_deadlines_by_date_descending(qtbot):
     window = MainWindow()
     qtbot.addWidget(window)
 
@@ -204,6 +198,51 @@ def test_table_sorts_overdue_deadlines_by_closest_to_today(qtbot, monkeypatch):
         "29904",
         "29912",
         "29914",
+    ]
+
+
+def test_deadline_filter_shows_today_and_current_week(qtbot, monkeypatch):
+    class FixedDate(date):
+        @classmethod
+        def today(cls):
+            return cls(2026, 6, 16)
+
+    monkeypatch.setattr(main_window_module, "date", FixedDate)
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    window.apply_scan_result(
+        ScanResult(
+            rows=[
+                OrderRow(order_number="NEXT-WEEK", deadline="2026-06-22"),
+                OrderRow(order_number="WEEK-END", deadline="2026-06-21"),
+                OrderRow(order_number="TODAY", deadline="2026-06-16"),
+                OrderRow(order_number="WEEK-START", deadline="2026-06-15"),
+                OrderRow(order_number="UNKNOWN", deadline="待确认"),
+            ],
+            scanned_messages=1,
+            parsed_attachments=1,
+        )
+    )
+
+    assert [window.table.item(row, 0).text() for row in range(window.table.rowCount())] == [
+        "NEXT-WEEK",
+        "WEEK-END",
+        "TODAY",
+        "WEEK-START",
+        "UNKNOWN",
+    ]
+
+    window.filter_combo.setCurrentText("今日")
+
+    assert [window.table.item(row, 0).text() for row in range(window.table.rowCount())] == ["TODAY"]
+
+    window.filter_combo.setCurrentText("本周")
+
+    assert [window.table.item(row, 0).text() for row in range(window.table.rowCount())] == [
+        "WEEK-END",
+        "TODAY",
+        "WEEK-START",
     ]
 
 
@@ -252,8 +291,8 @@ def test_later_scan_notifies_new_and_updated_orders(qtbot, monkeypatch):
     assert notifications == [(1, 1)]
     assert window.highlighted_order_numbers == {"PO-1001", "PO-2002"}
     assert [window.table.item(row, 0).text() for row in range(window.table.rowCount())] == [
-        "PO-2002",
         "PO-1001",
+        "PO-2002",
     ]
 
 
