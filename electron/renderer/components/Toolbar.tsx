@@ -1,3 +1,5 @@
+import { Badge, Button, Text, Title3 } from "@fluentui/react-components";
+
 type Props = {
   disabled: boolean;
   email: string;
@@ -9,21 +11,29 @@ type Props = {
 
 export function Toolbar({ disabled, email, onRefresh, onScanAll, onCheckUpdate, onEditSettings }: Props) {
   return (
-    <section className="panel toolbar">
-      <strong className="account-email">{email}</strong>
+    <section className="panel toolbar" role="region" aria-label="邮箱工具栏">
+      <div className="toolbar-title">
+        <Title3 as="h1">订单快读</Title3>
+        <div className="account-line">
+          <Badge appearance="tint" color="brand">
+            已连接
+          </Badge>
+          <Text className="account-email">{email}</Text>
+        </div>
+      </div>
       <div className="toolbar-actions">
-        <button type="button" className="primary" disabled={disabled} onClick={onRefresh}>
+        <Button appearance="primary" disabled={disabled} onClick={onRefresh}>
           刷新
-        </button>
-        <button type="button" disabled={disabled} onClick={onScanAll}>
+        </Button>
+        <Button disabled={disabled} onClick={onScanAll}>
           扫描全部邮件
-        </button>
-        <button type="button" disabled={disabled} onClick={onCheckUpdate}>
+        </Button>
+        <Button disabled={disabled} onClick={onCheckUpdate}>
           检查更新
-        </button>
-        <button type="button" disabled={disabled} onClick={onEditSettings}>
+        </Button>
+        <Button disabled={disabled} onClick={onEditSettings}>
           修改邮箱设置
-        </button>
+        </Button>
       </div>
     </section>
   );

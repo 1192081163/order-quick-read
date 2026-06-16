@@ -1,3 +1,5 @@
+import { Button, Field, Input, Text, Title3 } from "@fluentui/react-components";
+
 import type { AppSettings } from "../../shared/types";
 
 type Props = {
@@ -10,33 +12,37 @@ type Props = {
 
 export function SettingsPanel({ disabled, settings, onChange, onSave, onScanAll }: Props) {
   return (
-    <section className="panel settings-panel">
-      <label>
-        邮箱
-        <input
-          autoComplete="username"
-          disabled={disabled}
-          value={settings.email}
-          onChange={(event) => onChange({ ...settings, email: event.target.value })}
-        />
-      </label>
-      <label>
-        授权码
-        <input
-          autoComplete="current-password"
-          disabled={disabled}
-          type="password"
-          value={settings.authCode}
-          onChange={(event) => onChange({ ...settings, authCode: event.target.value })}
-        />
-      </label>
+    <section className="panel settings-panel" role="region" aria-label="邮箱设置">
+      <div className="panel-title">
+        <Title3 as="h1">订单快读</Title3>
+        <Text size={200}>企业微信邮箱</Text>
+      </div>
+      <div className="settings-fields">
+        <Field label="邮箱">
+          <Input
+            autoComplete="username"
+            disabled={disabled}
+            value={settings.email}
+            onChange={(_event, data) => onChange({ ...settings, email: data.value })}
+          />
+        </Field>
+        <Field label="授权码">
+          <Input
+            autoComplete="current-password"
+            disabled={disabled}
+            type="password"
+            value={settings.authCode}
+            onChange={(_event, data) => onChange({ ...settings, authCode: data.value })}
+          />
+        </Field>
+      </div>
       <div className="button-row">
-        <button type="button" disabled={disabled} onClick={onSave}>
+        <Button disabled={disabled} onClick={onSave}>
           保存设置
-        </button>
-        <button type="button" className="primary" disabled={disabled} onClick={onScanAll}>
+        </Button>
+        <Button appearance="primary" disabled={disabled} onClick={onScanAll}>
           扫描全部邮件
-        </button>
+        </Button>
       </div>
     </section>
   );

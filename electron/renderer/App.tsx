@@ -1,4 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
+import {
+  Button,
+  Dialog,
+  DialogActions,
+  DialogBody,
+  DialogContent,
+  DialogSurface,
+  DialogTitle,
+  FluentProvider,
+  Text,
+  webLightTheme,
+} from "@fluentui/react-components";
 
 import { filterOrderRows } from "../shared/filtering";
 import { sortOrderRows } from "../shared/sorting";
@@ -48,7 +60,7 @@ export function App() {
   const [editingSettings, setEditingSettings] = useState(true);
   const [rows, setRows] = useState<OrderRow[]>([]);
   const [filter, setFilter] = useState<DateFilter>(EMPTY_FILTER);
-  const [status, setStatus] = useState("请填写邮箱和授权码。");
+  const [status, setStatus] = useState("");
   const [isBusy, setIsBusy] = useState(false);
   const [pendingUpdate, setPendingUpdate] = useState<UpdateInfo | null>(null);
   const [isUpdatePromptOpen, setIsUpdatePromptOpen] = useState(false);
@@ -247,45 +259,55 @@ export function App() {
   }
 
   return (
-    <main className="app-shell">
-      {editingSettings ? (
-        <SettingsPanel
-          disabled={isBusy}
-          settings={settings}
-          onChange={setSettings}
-          onSave={() => void saveSettings()}
-          onScanAll={() => void scan(true)}
-        />
-      ) : (
-        <Toolbar
-          disabled={isBusy}
-          email={settings.email}
-          onRefresh={() => void scan(false)}
-          onScanAll={() => void scan(true)}
-          onCheckUpdate={() => void checkUpdate()}
-          onEditSettings={() => setEditingSettings(true)}
-        />
-      )}
-      <FilterBar filter={filter} onChange={setFilter} />
-      <OrderTable rows={displayRows} />
-      <StatusBar status={status} />
-      {isUpdatePromptOpen && pendingUpdate ? (
-        <div className="modal-backdrop">
-          <section className="update-dialog" role="dialog" aria-modal="true" aria-labelledby="update-dialog-title">
-            <h2 id="update-dialog-title">发现新版本</h2>
-            <p>发现新版本 {pendingUpdate.tagName}</p>
-            <p className="update-asset-name">{pendingUpdate.assetName || "请打开 Release 页面下载适合当前系统的安装包。"}</p>
-            <div className="dialog-actions">
-              <button type="button" disabled={isBusy} onClick={() => setIsUpdatePromptOpen(false)}>
-                稍后
-              </button>
-              <button type="button" className="primary" disabled={isBusy} onClick={() => void downloadUpdate()}>
-                下载新版
-              </button>
-            </div>
-          </section>
+    <FluentProvider theme={webLightTheme} className="fluent-root">
+      <main className="app-shell" aria-label="订单快读">
+        <div className="workspace">
+          {editingSettings ? (
+            <SettingsPanel
+              disabled={isBusy}
+              settings={settings}
+              onChange={setSettings}
+              onSave={() => void saveSettings()}
+              onScanAll={() => void scan(true)}
+            />
+          ) : (
+            <Toolbar
+              disabled={isBusy}
+              email={settings.email}
+              onRefresh={() => void scan(false)}
+              onScanAll={() => void scan(true)}
+              onCheckUpdate={() => void checkUpdate()}
+              onEditSettings={() => setEditingSettings(true)}
+            />
+          )}
+          <FilterBar filter={filter} onChange={setFilter} />
+          <OrderTable rows={displayRows} />
         </div>
-      ) : null}
-    </main>
+        <StatusBar status={status} />
+        {pendingUpdate ? (
+          <Dialog open={isUpdatePromptOpen}>
+            <DialogSurface>
+              <DialogBody>
+                <DialogTitle>发现新版本</DialogTitle>
+                <DialogContent>
+                  <Text block>发现新版本 {pendingUpdate.tagName}</Text>
+                  <Text block className="update-asset-name">
+                    {pendingUpdate.assetName || "请打开 Release 页面下载适合当前系统的安装包。"}
+                  </Text>
+                </DialogContent>
+                <DialogActions>
+                  <Button disabled={isBusy} onClick={() => setIsUpdatePromptOpen(false)}>
+                    稍后
+                  </Button>
+                  <Button appearance="primary" disabled={isBusy} onClick={() => void downloadUpdate()}>
+                    下载新版
+                  </Button>
+                </DialogActions>
+              </DialogBody>
+            </DialogSurface>
+          </Dialog>
+        ) : null}
+      </main>
+    </FluentProvider>
   );
 }

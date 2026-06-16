@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "../../electron/renderer/App";
+import { StatusBar } from "../../electron/renderer/components/StatusBar";
 import type { RendererApi, ScanResult } from "../../electron/shared/types";
 
 const emptyScanResult: ScanResult = {
@@ -47,6 +48,31 @@ describe("Electron renderer", () => {
     expect(screen.queryByLabelText("邮箱")).not.toBeInTheDocument();
   });
 
+  it("renders the order workspace with named Fluent layout regions", async () => {
+    vi.mocked(api.loadSettings).mockResolvedValue({ email: "saved@example.com", authCode: "secret" });
+
+    render(<App />);
+
+    expect(await screen.findByRole("main", { name: "订单快读" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "邮箱工具栏" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "订单筛选" })).toBeInTheDocument();
+    expect(screen.getByRole("table", { name: "订单列表" })).toBeInTheDocument();
+  });
+
+  it("shows running status as a transient popup instead of a persistent bar", () => {
+    vi.useFakeTimers();
+
+    render(<StatusBar status="已加载保存的邮箱。" />);
+
+    expect(screen.getByRole("status", { name: "运行状态" })).toHaveTextContent("已加载保存的邮箱。");
+
+    act(() => {
+      vi.advanceTimersByTime(4_000);
+    });
+
+    expect(screen.queryByRole("status", { name: "运行状态" })).not.toBeInTheDocument();
+  });
+
   it("runs scan all and refresh with the correct scan modes", async () => {
     vi.mocked(api.loadSettings).mockResolvedValue({ email: "saved@example.com", authCode: "secret" });
 
@@ -61,7 +87,7 @@ describe("Electron renderer", () => {
     await waitFor(() => expect(api.scanOrders).toHaveBeenLastCalledWith({ fullScan: false }));
   });
 
-  it("filters rendered rows by order number, sent date preset, and deadline preset", async () => {
+  it("filters rendered rows by order number, sent date, and deadline date", async () => {
     vi.mocked(api.loadSettings).mockResolvedValue({ email: "saved@example.com", authCode: "secret" });
     vi.mocked(api.scanOrders).mockResolvedValue({
       rows: [
@@ -99,13 +125,33 @@ describe("Electron renderer", () => {
     fireEvent.click(screen.getByRole("button", { name: "扫描全部邮件" }));
     await screen.findByText("TODAY-SENT-TODAY-DUE");
 
-    fireEvent.change(screen.getByLabelText("发送时间"), { target: { value: "today" } });
-    fireEvent.change(screen.getByLabelText("截止时间"), { target: { value: "today" } });
+    fireEvent.change(screen.getByLabelText("发送时间"), { target: { value: "2026-06-16" } });
+    fireEvent.blur(screen.getByLabelText("发送时间"));
+    fireEvent.change(screen.getByLabelText("截止时间"), { target: { value: "2026-06-16" } });
+    fireEvent.blur(screen.getByLabelText("截止时间"));
     fireEvent.change(screen.getByLabelText("订单号"), { target: { value: "today" } });
 
+    await waitFor(() => expect(screen.queryByText("TODAY-SENT-FUTURE-DUE")).not.toBeInTheDocument());
     expect(screen.getByText("TODAY-SENT-TODAY-DUE")).toBeInTheDocument();
-    expect(screen.queryByText("TODAY-SENT-FUTURE-DUE")).not.toBeInTheDocument();
     expect(screen.queryByText("YESTERDAY-SENT-TODAY-DUE")).not.toBeInTheDocument();
+  });
+
+  it("opens calendar pickers directly from sent and deadline date filters", async () => {
+    vi.mocked(api.loadSettings).mockResolvedValue({ email: "saved@example.com", authCode: "secret" });
+
+    const { container } = render(<App />);
+    await screen.findByText("saved@example.com");
+
+    fireEvent.click(screen.getByLabelText("发送时间"));
+
+    expect(screen.getByRole("dialog", { name: "Calendar" })).toBeInTheDocument();
+    expect(container.querySelector('input[type="date"]')).not.toBeInTheDocument();
+
+    fireEvent.keyDown(screen.getByLabelText("发送时间"), { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Calendar" })).not.toBeInTheDocument());
+    fireEvent.click(screen.getByLabelText("截止时间"));
+
+    expect(screen.getByRole("dialog", { name: "Calendar" })).toBeInTheDocument();
   });
 
   it("opens settings for editing and collapses them after save", async () => {
