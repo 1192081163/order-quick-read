@@ -21,6 +21,7 @@ def test_windows_build_script_reports_failed_venv_creation_before_resolving_pyth
 def test_windows_build_script_creates_direct_clickable_exe():
     script = Path("scripts/build_windows.ps1").read_text(encoding="utf-8")
 
-    assert '--name "EmailOrderReader"' in script
+    assert '--name "OrderQuickRead"' in script
+    assert '--icon "assets/app_icon.ico"' in script
     assert "--onefile" in script
-    assert "dist\\EmailOrderReader.exe" in script
+    assert "dist\\OrderQuickRead.exe" in script

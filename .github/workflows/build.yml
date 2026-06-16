@@ -37,14 +37,14 @@ jobs:
       - name: Upload Windows package
         uses: actions/upload-artifact@v7
         with:
-          name: email-order-reader-windows
-          path: dist/Email Order Reader
+          name: order-quick-read-windows
+          path: dist/Order Quick Read
 
       - name: Upload direct Windows executable
         uses: actions/upload-artifact@v7
         with:
-          name: EmailOrderReader.exe
-          path: dist/EmailOrderReader.exe
+          name: OrderQuickRead.exe
+          path: dist/OrderQuickRead.exe
 
   build-macos:
     name: Build macOS
@@ -78,14 +78,14 @@ jobs:
       - name: Upload macOS package
         uses: actions/upload-artifact@v7
         with:
-          name: email-order-reader-macos
-          path: dist/Email Order Reader.app
+          name: order-quick-read-macos
+          path: dist/Order Quick Read.app
 
       - name: Upload direct macOS disk image
         uses: actions/upload-artifact@v7
         with:
-          name: EmailOrderReader.dmg
-          path: dist/EmailOrderReader.dmg
+          name: OrderQuickRead.dmg
+          path: dist/OrderQuickRead.dmg
 
   build-release:
     name: Publish Release
@@ -99,13 +99,13 @@ jobs:
       - name: Download Windows executable
         uses: actions/download-artifact@v8
         with:
-          name: EmailOrderReader.exe
+          name: OrderQuickRead.exe
           path: release-assets
 
       - name: Download macOS disk image
         uses: actions/download-artifact@v8
         with:
-          name: EmailOrderReader.dmg
+          name: OrderQuickRead.dmg
           path: release-assets
 
       - name: Publish direct downloads
@@ -115,8 +115,8 @@ jobs:
         run: |
           tag="build-${GITHUB_RUN_NUMBER}"
           gh release create "$tag" \
-            "release-assets/EmailOrderReader.exe#EmailOrderReader.exe" \
-            "release-assets/EmailOrderReader.dmg#EmailOrderReader.dmg" \
-            --title "Email Order Reader ${tag}" \
-            --notes "Windows: download EmailOrderReader.exe and double-click to run. macOS: download EmailOrderReader.dmg, open it, then open Email Order Reader.app." \
+            "release-assets/OrderQuickRead.exe#OrderQuickRead.exe" \
+            "release-assets/OrderQuickRead.dmg#OrderQuickRead.dmg" \
+            --title "Order Quick Read ${tag}" \
+            --notes "Windows: download OrderQuickRead.exe and double-click to run. macOS: download OrderQuickRead.dmg, open it, then open Order Quick Read.app." \
             --latest

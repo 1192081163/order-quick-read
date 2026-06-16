@@ -1,5 +1,12 @@
 .worktrees
 .worktrees/
+.superpowers/
+.codegraph/codegraph.db
+.codegraph/*.db
+.codegraph/*.db-*
+.codegraph/daemon.pid
+.codegraph/*.sock
+.codegraph/*.log
 .venv/
 .venv-windows/
 __pycache__/

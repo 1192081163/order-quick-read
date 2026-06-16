@@ -1,6 +1,6 @@
-# Email Order Reader
+# 订单快读
 
-Minimal desktop app for scanning recent IMAP email attachments and showing order deadlines.
+Order Quick Read is a minimal desktop app for scanning IMAP email attachments and showing order deadlines.
 
 ## Behavior
 
@@ -57,21 +57,21 @@ GitHub Actions:
 Push the project to GitHub, then open Releases for direct downloads:
 
 ```text
-EmailOrderReader.exe
-EmailOrderReader.dmg
+OrderQuickRead.exe
+OrderQuickRead.dmg
 ```
 
-On Windows, download `EmailOrderReader.exe` and double-click to run.
+On Windows, download `OrderQuickRead.exe` and double-click to run.
 
-On macOS, download `EmailOrderReader.dmg`, open it, then open `Email Order Reader.app`.
+On macOS, download `OrderQuickRead.dmg`, open it, then open `Order Quick Read.app`.
 
 GitHub Actions also uploads these build artifacts:
 
 ```text
-email-order-reader-windows
-EmailOrderReader.exe
-email-order-reader-macos
-EmailOrderReader.dmg
+order-quick-read-windows
+OrderQuickRead.exe
+order-quick-read-macos
+OrderQuickRead.dmg
 ```
 
 macOS:
@@ -89,13 +89,13 @@ Windows PowerShell:
 The Windows build output is:
 
 ```text
-dist\Email Order Reader\Email Order Reader.exe
+dist\Order Quick Read\Order Quick Read.exe
 ```
 
 The macOS direct-download output is:
 
 ```text
-dist/EmailOrderReader.dmg
+dist/OrderQuickRead.dmg
 ```
 
 Unsigned internal builds may show Windows SmartScreen or macOS Gatekeeper warnings.

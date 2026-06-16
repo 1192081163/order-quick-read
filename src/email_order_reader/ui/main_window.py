@@ -18,7 +18,6 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
-    QStyle,
     QSystemTrayIcon,
     QTableWidget,
     QTableWidgetItem,
@@ -27,11 +26,13 @@ from PySide6.QtWidgets import (
 )
 
 import email_order_reader.settings as settings_module
+from email_order_reader.branding import TRAY_TOOLTIP, WINDOW_TITLE
 from email_order_reader.email_client import ImapEmailClient
 from email_order_reader.models import ImapConfig, ScanResult
 from email_order_reader.scan_service import OrderScanService
 from email_order_reader.settings import AppSettings, load_settings, save_settings
 from email_order_reader.updates import UpdateInfo, check_for_update, download_update_asset
+from email_order_reader.ui.icons import create_app_icon
 
 
 DEFAULT_IMAP_SERVER = "imap.exmail.qq.com"
@@ -93,7 +94,8 @@ class UpdateDownloadWorker(QObject):
 class MainWindow(QMainWindow):
     def __init__(self, settings_path: Path | None = None, check_updates_on_start: bool = True) -> None:
         super().__init__()
-        self.setWindowTitle("邮件订单读取")
+        self.setWindowTitle(WINDOW_TITLE)
+        self.setWindowIcon(create_app_icon())
         self.resize(760, 520)
         self.thread: QThread | None = None
         self.worker: ScanWorker | None = None
@@ -546,9 +548,8 @@ class MainWindow(QMainWindow):
         if self.tray_icon is not None or not QSystemTrayIcon.isSystemTrayAvailable():
             return
 
-        icon = self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxInformation)
-        self.tray_icon = QSystemTrayIcon(icon, self)
-        self.tray_icon.setToolTip("邮件订单读取")
+        self.tray_icon = QSystemTrayIcon(self.windowIcon(), self)
+        self.tray_icon.setToolTip(TRAY_TOOLTIP)
         self.tray_icon.show()
 
     def apply_style(self) -> None:

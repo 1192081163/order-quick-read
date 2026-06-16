@@ -26,11 +26,11 @@ def test_github_actions_builds_windows_and_macos_artifacts():
     assert "actions/checkout@v4" not in content
     assert "actions/setup-python@v5" not in content
     assert "actions/upload-artifact@v4" not in content
-    assert "dist/Email Order Reader" in content
-    assert "dist/EmailOrderReader.exe" in content
-    assert "dist/EmailOrderReader.dmg" in content
-    assert "EmailOrderReader.exe#EmailOrderReader.exe" in content
-    assert "EmailOrderReader.dmg#EmailOrderReader.dmg" in content
+    assert "dist/Order Quick Read" in content
+    assert "dist/OrderQuickRead.exe" in content
+    assert "dist/OrderQuickRead.dmg" in content
+    assert "OrderQuickRead.exe#OrderQuickRead.exe" in content
+    assert "OrderQuickRead.dmg#OrderQuickRead.dmg" in content
     assert "build-release:" in content
     assert "needs: [build-windows, build-macos]" in content
     release_job = content.split("  build-release:", maxsplit=1)[1]
@@ -51,7 +51,8 @@ def test_macos_build_script_bundles_excel_parser_dependencies():
 def test_macos_build_script_creates_direct_clickable_dmg():
     script = Path("scripts/build_macos.sh").read_text(encoding="utf-8")
 
-    assert 'APP_PATH="dist/Email Order Reader.app"' in script
-    assert 'DMG_PATH="dist/EmailOrderReader.dmg"' in script
+    assert 'APP_PATH="dist/Order Quick Read.app"' in script
+    assert 'DMG_PATH="dist/OrderQuickRead.dmg"' in script
+    assert "--icon assets/app_icon.icns" in script
     assert "hdiutil create" in script
     assert '-format UDZO "$DMG_PATH"' in script

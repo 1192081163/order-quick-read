@@ -31,8 +31,9 @@ try {
 }
 
 & $PythonExe -m PyInstaller `
-  --name "Email Order Reader" `
+  --name "Order Quick Read" `
   --windowed `
+  --icon "assets/app_icon.ico" `
   --clean `
   --noconfirm `
   --hidden-import openpyxl `
@@ -40,14 +41,15 @@ try {
   src/email_order_reader/app.py
 
 & $PythonExe -m PyInstaller `
-  --name "EmailOrderReader" `
+  --name "OrderQuickRead" `
   --onefile `
   --windowed `
+  --icon "assets/app_icon.ico" `
   --clean `
   --noconfirm `
   --hidden-import openpyxl `
   --hidden-import xlrd `
   src/email_order_reader/app.py
 
-Write-Host "Portable folder build complete: dist\Email Order Reader\Email Order Reader.exe"
-Write-Host "Direct executable build complete: dist\EmailOrderReader.exe"
+Write-Host "Portable folder build complete: dist\Order Quick Read\Order Quick Read.exe"
+Write-Host "Direct executable build complete: dist\OrderQuickRead.exe"

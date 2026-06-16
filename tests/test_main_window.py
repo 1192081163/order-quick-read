@@ -94,6 +94,25 @@ def test_build_config_uses_enterprise_wechat_defaults(qtbot):
     assert config.auth_code == "secret"
 
 
+def test_window_uses_order_quick_read_branding(qtbot):
+    window = MainWindow(check_updates_on_start=False)
+    qtbot.addWidget(window)
+
+    assert window.windowTitle() == "订单快读"
+    assert not window.windowIcon().isNull()
+
+
+def test_tray_icon_uses_order_quick_read_branding(qtbot, monkeypatch):
+    monkeypatch.setattr(QSystemTrayIcon, "isSystemTrayAvailable", staticmethod(lambda: True))
+
+    window = MainWindow(check_updates_on_start=False)
+    qtbot.addWidget(window)
+
+    assert window.tray_icon is not None
+    assert window.tray_icon.toolTip() == "订单快读"
+    assert not window.tray_icon.icon().isNull()
+
+
 def freeze_today(monkeypatch, year=2026, month=6, day=16):
     class FixedDate(date):
         @classmethod
@@ -509,9 +528,9 @@ def test_window_prompts_to_download_new_update(qtbot, monkeypatch):
     qtbot.addWidget(window)
     update = UpdateInfo(
         tag_name="build-15",
-        release_url="https://github.com/1192081163/email-order-reader/releases/tag/build-15",
-        asset_name="EmailOrderReader.exe",
-        asset_url="https://example.com/EmailOrderReader.exe",
+        release_url="https://github.com/1192081163/order-quick-read/releases/tag/build-15",
+        asset_name="OrderQuickRead.exe",
+        asset_url="https://example.com/OrderQuickRead.exe",
     )
     downloads = []
 
@@ -568,7 +587,7 @@ def test_window_opens_release_page_when_update_asset_is_missing(qtbot, monkeypat
     qtbot.addWidget(window)
     update = UpdateInfo(
         tag_name="build-16",
-        release_url="https://github.com/1192081163/email-order-reader/releases/tag/build-16",
+        release_url="https://github.com/1192081163/order-quick-read/releases/tag/build-16",
         asset_name="",
         asset_url="",
     )
@@ -599,7 +618,7 @@ def test_window_ignores_update_check_failures(qtbot):
 def test_window_opens_downloaded_update_file(qtbot, monkeypatch, tmp_path):
     window = MainWindow(check_updates_on_start=False)
     qtbot.addWidget(window)
-    download_path = tmp_path / "EmailOrderReader.exe"
+    download_path = tmp_path / "OrderQuickRead.exe"
     download_path.write_bytes(b"fake exe")
     opened_files = []
 

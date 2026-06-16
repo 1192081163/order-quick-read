@@ -10,11 +10,12 @@ from pathlib import Path
 from urllib import request
 
 from email_order_reader import __version__
+from email_order_reader.branding import REPOSITORY
 from email_order_reader.build_info import CURRENT_RELEASE_TAG
 
 
-GITHUB_RELEASE_API_URL = "https://api.github.com/repos/1192081163/email-order-reader/releases/latest"
-USER_AGENT = f"EmailOrderReader/{__version__}"
+GITHUB_RELEASE_API_URL = f"https://api.github.com/repos/{REPOSITORY}/releases/latest"
+USER_AGENT = f"OrderQuickRead/{__version__}"
 
 
 @dataclass(frozen=True)
