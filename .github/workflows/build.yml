@@ -68,73 +68,10 @@ jobs:
           path: dist-electron-packages/OrderQuickReadSetup.exe
           if-no-files-found: error
 
-  build-macos-x64:
-    name: Build macOS Intel DMG
-    runs-on: macos-15-intel
-    needs: test-electron
-    steps:
-      - name: Check out code
-        uses: actions/checkout@v6
-
-      - name: Set up Node
-        uses: actions/setup-node@v6
-        with:
-          node-version: "24"
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Stamp Electron build info
-        run: node scripts/stamp_electron_build_info.mjs "build-${{ github.run_number }}"
-
-      - name: Build macOS Intel disk image
-        run: npm run electron:build -- --mac dmg --x64 --publish never
-
-      - name: Upload macOS Intel disk image
-        uses: actions/upload-artifact@v7
-        with:
-          name: OrderQuickRead-macos-x64.dmg
-          path: dist-electron-packages/OrderQuickRead-macos-x64.dmg
-          if-no-files-found: error
-
-  build-macos-arm64:
-    name: Build macOS Apple Silicon DMG
-    runs-on: macos-latest
-    needs: test-electron
-    steps:
-      - name: Check out code
-        uses: actions/checkout@v6
-
-      - name: Set up Node
-        uses: actions/setup-node@v6
-        with:
-          node-version: "24"
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Stamp Electron build info
-        run: node scripts/stamp_electron_build_info.mjs "build-${{ github.run_number }}"
-
-      - name: Build macOS Apple Silicon disk image
-        run: npm run electron:build -- --mac dmg --arm64 --publish never
-
-      - name: Upload macOS Apple Silicon disk image
-        uses: actions/upload-artifact@v7
-        with:
-          name: OrderQuickRead-macos-arm64.dmg
-          path: dist-electron-packages/OrderQuickRead-macos-arm64.dmg
-          if-no-files-found: error
-
   publish-release:
     name: Publish Release
     runs-on: ubuntu-latest
-    needs:
-      - build-windows
-      - build-macos-x64
-      - build-macos-arm64
+    needs: build-windows
     if: github.ref == 'refs/heads/main'
     steps:
       - name: Check out code
@@ -146,18 +83,6 @@ jobs:
           name: OrderQuickReadSetup.exe
           path: release-assets
 
-      - name: Download macOS Intel disk image
-        uses: actions/download-artifact@v8
-        with:
-          name: OrderQuickRead-macos-x64.dmg
-          path: release-assets
-
-      - name: Download macOS Apple Silicon disk image
-        uses: actions/download-artifact@v8
-        with:
-          name: OrderQuickRead-macos-arm64.dmg
-          path: release-assets
-
       - name: Publish direct downloads
         shell: bash
         env:
@@ -166,8 +91,6 @@ jobs:
           tag="build-${GITHUB_RUN_NUMBER}"
           gh release create "$tag" \
             "release-assets/OrderQuickReadSetup.exe#OrderQuickReadSetup.exe" \
-            "release-assets/OrderQuickRead-macos-x64.dmg#OrderQuickRead-macos-x64.dmg" \
-            "release-assets/OrderQuickRead-macos-arm64.dmg#OrderQuickRead-macos-arm64.dmg" \
             --title "Order Quick Read ${tag}" \
-            --notes "Windows: download OrderQuickReadSetup.exe and double-click to install. macOS Intel: download OrderQuickRead-macos-x64.dmg. macOS Apple Silicon: download OrderQuickRead-macos-arm64.dmg. Unsigned macOS builds may need right-click Open on first launch." \
+            --notes "Windows: download OrderQuickReadSetup.exe and double-click to install." \
             --latest
