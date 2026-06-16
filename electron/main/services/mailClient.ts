@@ -1,5 +1,4 @@
-import { ImapFlow, type ImapFlowOptions } from "imapflow";
-import { simpleParser, type ParsedMail } from "mailparser";
+import { ImapFlow, type ImapFlowOptions, type MessageStructureObject } from "imapflow";
 
 const SUPPORTED_EXCEL_EXTENSION = /\.(xlsx|xlsm|xls)$/i;
 
@@ -41,6 +40,11 @@ type SelectedMailbox = {
   uidNext?: number;
 };
 
+type ExcelBodyPart = {
+  part: string;
+  filename: string;
+};
+
 export class ImapAttachmentClient implements AttachmentClient {
   constructor(private readonly config: ImapConfig) {}
 
@@ -69,7 +73,7 @@ export class ImapAttachmentClient implements AttachmentClient {
         const fetchRange = createFetchRange(options.sinceUid);
         for await (const message of client.fetch(
           fetchRange,
-          { uid: true, envelope: true, internalDate: true, source: true },
+          { uid: true, envelope: true, internalDate: true, bodyStructure: true, headers: ["date"] },
           { uid: true },
         )) {
           if (options.sinceUid !== undefined && message.uid <= options.sinceUid) {
@@ -78,23 +82,28 @@ export class ImapAttachmentClient implements AttachmentClient {
 
           scannedMessages += 1;
           latestUid = Math.max(latestUid, message.uid);
-          if (!message.source) {
+          const excelParts = collectExcelBodyParts(message.bodyStructure);
+          if (excelParts.length === 0) {
             continue;
           }
 
-          const parsed = await simpleParser(message.source);
-          const messageSubject = parsed.subject ?? message.envelope?.subject ?? "";
-          const messageDate = messageDateFromParsedMail(parsed, message.envelope?.date ?? message.internalDate);
+          const downloads = await client.downloadMany(
+            String(message.uid),
+            excelParts.map((part) => part.part),
+            { uid: true },
+          );
+          const messageSubject = message.envelope?.subject ?? "";
+          const messageDate = messageDateFromHeaders(message.headers, message.envelope?.date ?? message.internalDate);
 
-          for (const attachment of parsed.attachments) {
-            const filename = attachment.filename ?? "";
-            if (!isExcelFilename(filename)) {
+          for (const excelPart of excelParts) {
+            const content = downloads[excelPart.part]?.content;
+            if (!content) {
               continue;
             }
 
             attachments.push({
-              filename,
-              content: attachment.content,
+              filename: excelPart.filename,
+              content,
               messageSubject,
               messageDate,
               messageUid: message.uid,
@@ -139,14 +148,42 @@ function isExcelFilename(filename: string): boolean {
   return SUPPORTED_EXCEL_EXTENSION.test(filename);
 }
 
-function messageDateFromParsedMail(parsed: ParsedMail, fallback: Date | string | undefined): string {
-  const rawDateHeader = parsed.headerLines?.find((header) => header.key.toLowerCase() === "date")?.line;
+function collectExcelBodyParts(structure: MessageStructureObject | undefined): ExcelBodyPart[] {
+  if (!structure) {
+    return [];
+  }
+
+  const parts: ExcelBodyPart[] = [];
+  collectExcelBodyPartsInto(structure, parts);
+  return parts;
+}
+
+function collectExcelBodyPartsInto(node: MessageStructureObject, parts: ExcelBodyPart[]): void {
+  const filename = filenameFromStructure(node);
+  if (node.part && isExcelFilename(filename)) {
+    parts.push({ part: node.part, filename });
+  }
+
+  for (const child of node.childNodes ?? []) {
+    collectExcelBodyPartsInto(child, parts);
+  }
+}
+
+function filenameFromStructure(node: MessageStructureObject): string {
+  return node.dispositionParameters?.filename ?? node.parameters?.name ?? "";
+}
+
+function messageDateFromHeaders(headers: Buffer | undefined, fallback: Date | string | undefined): string {
+  const rawDateHeader = headers
+    ?.toString("utf-8")
+    .split(/\r?\n/)
+    .find((line) => /^date:/i.test(line));
   const dateFromHeader = rawDateHeader ? rfcDateHeaderToIso(rawDateHeader) : "";
   if (dateFromHeader) {
     return dateFromHeader;
   }
 
-  return toIsoDate(parsed.date ?? fallback);
+  return toIsoDate(fallback);
 }
 
 function rfcDateHeaderToIso(rawHeader: string): string {

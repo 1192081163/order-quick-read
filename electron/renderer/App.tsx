@@ -43,7 +43,7 @@ export function App() {
   const [status, setStatus] = useState("请填写邮箱和授权码。");
   const [isBusy, setIsBusy] = useState(false);
   const [pendingUpdate, setPendingUpdate] = useState<UpdateInfo | null>(null);
-  const [downloadedUpdatePath, setDownloadedUpdatePath] = useState("");
+  const [isUpdatePromptOpen, setIsUpdatePromptOpen] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -90,7 +90,7 @@ export function App() {
         }
 
         setPendingUpdate(update);
-        setDownloadedUpdatePath("");
+        setIsUpdatePromptOpen(true);
         setStatus(`发现新版本 ${update.tagName}。`);
       } catch {
         // 启动更新检查失败时不影响正常读取订单。
@@ -204,7 +204,7 @@ export function App() {
 
       const update = await api.checkUpdates();
       setPendingUpdate(update);
-      setDownloadedUpdatePath("");
+      setIsUpdatePromptOpen(Boolean(update));
       setStatus(update ? `发现新版本 ${update.tagName}。` : "当前已是最新版本。");
     } catch (error) {
       setStatus(statusFromError(error));
@@ -228,29 +228,8 @@ export function App() {
       }
 
       const installerPath = await api.downloadUpdate(pendingUpdate);
-      setDownloadedUpdatePath(installerPath);
-      setStatus("新版安装包已下载。");
-    } catch (error) {
-      setStatus(statusFromError(error));
-    } finally {
-      setIsBusy(false);
-    }
-  }
-
-  async function installUpdate() {
-    if (!downloadedUpdatePath) {
-      return;
-    }
-
-    try {
-      setIsBusy(true);
-      const api = rendererApi();
-      if (!api) {
-        setStatus("桌面接口尚未连接。请在 Electron 应用中打开。");
-        return;
-      }
-
-      await api.installUpdate(downloadedUpdatePath);
+      await api.installUpdate(installerPath);
+      setIsUpdatePromptOpen(false);
       setStatus("已打开新版安装包。请按安装向导完成更新。");
     } catch (error) {
       setStatus(statusFromError(error));
@@ -281,12 +260,24 @@ export function App() {
       )}
       <FilterBar filter={filter} onChange={setFilter} />
       <OrderTable rows={displayRows} />
-      <StatusBar
-        actionLabel={downloadedUpdatePath ? "打开安装包" : pendingUpdate ? "下载新版" : undefined}
-        disabled={isBusy}
-        status={status}
-        onAction={downloadedUpdatePath ? () => void installUpdate() : pendingUpdate ? () => void downloadUpdate() : undefined}
-      />
+      <StatusBar status={status} />
+      {isUpdatePromptOpen && pendingUpdate ? (
+        <div className="modal-backdrop">
+          <section className="update-dialog" role="dialog" aria-modal="true" aria-labelledby="update-dialog-title">
+            <h2 id="update-dialog-title">发现新版本</h2>
+            <p>发现新版本 {pendingUpdate.tagName}</p>
+            <p className="update-asset-name">{pendingUpdate.assetName || "请打开 Release 页面下载适合当前系统的安装包。"}</p>
+            <div className="dialog-actions">
+              <button type="button" disabled={isBusy} onClick={() => setIsUpdatePromptOpen(false)}>
+                稍后
+              </button>
+              <button type="button" className="primary" disabled={isBusy} onClick={() => void downloadUpdate()}>
+                下载新版
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </main>
   );
 }

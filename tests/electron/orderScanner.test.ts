@@ -11,6 +11,15 @@ import type { OrderRow } from "../../electron/shared/types";
 type MockImapMessage = {
   uid: number;
   source?: Buffer;
+  headers?: Buffer;
+  bodyStructure?: {
+    part?: string;
+    type: string;
+    parameters?: Record<string, string>;
+    disposition?: string;
+    dispositionParameters?: Record<string, string>;
+    childNodes?: MockImapMessage["bodyStructure"][];
+  };
   envelope?: {
     subject?: string;
     date?: Date;
@@ -23,6 +32,7 @@ const mailMocks = vi.hoisted(() => {
     connect: ReturnType<typeof vi.fn>;
     getMailboxLock: ReturnType<typeof vi.fn>;
     fetch: ReturnType<typeof vi.fn>;
+    downloadMany: ReturnType<typeof vi.fn>;
     logout: ReturnType<typeof vi.fn>;
     mailbox: { uidValidity: bigint; uidNext?: number };
   };
@@ -34,6 +44,7 @@ const mailMocks = vi.hoisted(() => {
     uidNext: 10,
     connectError: null as Error | null,
     simpleParser: vi.fn(),
+    downloads: new Map<string, Buffer>(),
     ImapFlow: vi.fn((options: unknown) => {
       const release = vi.fn();
       const client: MockClient = {
@@ -44,6 +55,11 @@ const mailMocks = vi.hoisted(() => {
         }),
         getMailboxLock: vi.fn(async () => ({ release })),
         fetch: vi.fn(() => makeMessageIterator(state.messages)),
+        downloadMany: vi.fn(async (range: string, parts: string[]) =>
+          Object.fromEntries(
+            parts.map((part) => [part, { meta: {}, content: state.downloads.get(`${range}:${part}`) ?? null }]),
+          ),
+        ),
         logout: vi.fn(async () => undefined),
         mailbox: { uidValidity: state.uidValidity, uidNext: state.uidNext },
       };
@@ -78,6 +94,7 @@ beforeEach(async () => {
   mailMocks.uidValidity = 123n;
   mailMocks.uidNext = 10;
   mailMocks.connectError = null;
+  mailMocks.downloads = new Map();
   mailMocks.simpleParser.mockReset();
   mailMocks.ImapFlow.mockClear();
 });
@@ -366,11 +383,29 @@ describe("Electron order scanner", () => {
 });
 
 describe("IMAP attachment client", () => {
-  it("fetches only Excel attachments and preserves message metadata without real network", async () => {
+  it("downloads only Excel body parts and preserves message metadata without real network", async () => {
     mailMocks.messages = [
       {
         uid: 7,
-        source: Buffer.from("message-7"),
+        headers: Buffer.from("Date: Tue, 16 Jun 2026 00:30:00 +0800\r\n"),
+        bodyStructure: {
+          type: "multipart/mixed",
+          childNodes: [
+            { part: "1", type: "text/plain" },
+            {
+              part: "2",
+              type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+              disposition: "attachment",
+              dispositionParameters: { filename: "orders.xlsx" },
+            },
+            {
+              part: "3",
+              type: "application/pdf",
+              disposition: "attachment",
+              dispositionParameters: { filename: "notes.pdf" },
+            },
+          ],
+        },
         envelope: {
           subject: "fallback subject",
           date: new Date("2026-06-16T08:00:00.000Z"),
@@ -378,32 +413,32 @@ describe("IMAP attachment client", () => {
       },
       {
         uid: 9,
-        source: Buffer.from("message-9"),
+        bodyStructure: {
+          type: "multipart/mixed",
+          childNodes: [
+            {
+              part: "1",
+              type: "application/octet-stream",
+              disposition: "attachment",
+              dispositionParameters: { filename: "macro.xlsm" },
+            },
+            {
+              part: "2",
+              type: "application/octet-stream",
+              disposition: "attachment",
+              dispositionParameters: { filename: "legacy.xls" },
+            },
+          ],
+        },
+        envelope: {
+          subject: "macro orders",
+          date: new Date("2026-06-16T10:00:00.000Z"),
+        },
       },
     ];
-    mailMocks.simpleParser.mockImplementation(async (source: Buffer) => {
-      if (source.toString() === "message-7") {
-        return {
-          subject: "orders",
-          date: new Date("2026-06-16T09:00:00.000Z"),
-          headerLines: [{ key: "date", line: "Date: Tue, 16 Jun 2026 00:30:00 +0800" }],
-          attachments: [
-            { filename: "orders.xlsx", content: Buffer.from("xlsx") },
-            { filename: "notes.pdf", content: Buffer.from("pdf") },
-          ],
-        };
-      }
-
-      return {
-        subject: "macro orders",
-        date: new Date("2026-06-16T10:00:00.000Z"),
-        headerLines: [],
-        attachments: [
-          { filename: "macro.xlsm", content: Buffer.from("xlsm") },
-          { filename: "legacy.xls", content: Buffer.from("xls") },
-        ],
-      };
-    });
+    mailMocks.downloads.set("7:2", Buffer.from("xlsx"));
+    mailMocks.downloads.set("9:1", Buffer.from("xlsm"));
+    mailMocks.downloads.set("9:2", Buffer.from("xls"));
 
     const { ImapAttachmentClient } = await import("../../electron/main/services/mailClient");
     const client = new ImapAttachmentClient({
@@ -425,9 +460,12 @@ describe("IMAP attachment client", () => {
     );
     expect(mailMocks.clients[0].client.fetch).toHaveBeenCalledWith(
       "7:*",
-      { uid: true, envelope: true, internalDate: true, source: true },
+      { uid: true, envelope: true, internalDate: true, bodyStructure: true, headers: ["date"] },
       { uid: true },
     );
+    expect(mailMocks.clients[0].client.downloadMany).toHaveBeenCalledWith("7", ["2"], { uid: true });
+    expect(mailMocks.clients[0].client.downloadMany).toHaveBeenCalledWith("9", ["1", "2"], { uid: true });
+    expect(mailMocks.simpleParser).not.toHaveBeenCalled();
     expect(mailMocks.clients[0].release).toHaveBeenCalledTimes(1);
     expect(mailMocks.clients[0].client.logout).toHaveBeenCalledTimes(1);
     expect(result).toEqual({
@@ -435,7 +473,7 @@ describe("IMAP attachment client", () => {
         {
           filename: "orders.xlsx",
           content: Buffer.from("xlsx"),
-          messageSubject: "orders",
+          messageSubject: "fallback subject",
           messageDate: "2026-06-16T00:30:00+08:00",
           messageUid: 7,
         },
