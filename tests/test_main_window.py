@@ -390,6 +390,21 @@ def test_scan_status_reports_unparsed_excel_attachments(qtbot):
     assert "orders.xlsx：未识别订单号列或截至时间列" in window.status_label.text()
 
 
+def test_login_failure_stops_auto_refresh(qtbot):
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.email_input.setText("buyer@example.com")
+    window.auth_code_input.setText("secret")
+
+    assert window.auto_refresh_timer.isActive()
+
+    window.apply_scan_error("邮箱登录失败：请检查授权码。")
+
+    assert not window.auto_refresh_timer.isActive()
+    assert "扫描失败：邮箱登录失败" in window.status_label.text()
+    assert "已暂停自动刷新" in window.status_label.text()
+
+
 def test_window_loads_saved_credentials_and_collapses_settings(qtbot, tmp_path):
     settings_path = tmp_path / "settings.json"
     settings_path.write_text('{"email": "saved@example.com", "auth_code": "saved-secret"}', encoding="utf-8")

@@ -82,7 +82,7 @@ class ImapEmailClient:
 
         mailbox = imaplib.IMAP4_SSL(self.config.server, self.config.port, timeout=self.timeout_seconds)
         try:
-            mailbox.login(self.config.email, self.config.auth_code)
+            _login(mailbox, self.config)
             mailbox.select("INBOX")
             if cutoff is None:
                 status, data = mailbox.search(None, "ALL")
@@ -128,7 +128,7 @@ class ImapEmailClient:
 
         mailbox = imaplib.IMAP4_SSL(self.config.server, self.config.port, timeout=self.timeout_seconds)
         try:
-            mailbox.login(self.config.email, self.config.auth_code)
+            _login(mailbox, self.config)
             mailbox.select("INBOX")
             uidvalidity = _read_uidvalidity(mailbox)
 
@@ -198,6 +198,31 @@ def _read_uidvalidity(mailbox) -> str:
     if isinstance(value, bytes):
         return value.decode(errors="replace")
     return str(value)
+
+
+def _login(mailbox, config: ImapConfig) -> None:
+    try:
+        mailbox.login(config.email, config.auth_code)
+    except imaplib.IMAP4.error as exc:
+        raise RuntimeError(_format_login_error(exc)) from exc
+
+
+def _format_login_error(exc: Exception) -> str:
+    raw_message = _exception_text(exc)
+    if "login fail" in raw_message.lower():
+        return (
+            "邮箱登录失败：企业微信拒绝登录。请检查企业微信邮箱是否已开启 IMAP/SMTP 服务、"
+            "授权码是否正确；如果刚连续刷新多次，可能触发登录频率限制，请等待几分钟后再试。"
+        )
+    return f"邮箱登录失败：{raw_message}"
+
+
+def _exception_text(exc: Exception) -> str:
+    if getattr(exc, "args", None):
+        first_arg = exc.args[0]
+        if isinstance(first_arg, bytes):
+            return first_arg.decode(errors="replace")
+    return str(exc)
 
 
 def _logout_safely(mailbox) -> None:

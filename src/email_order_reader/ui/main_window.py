@@ -311,6 +311,11 @@ class MainWindow(QMainWindow):
             self.table.setItem(row_index, 1, deadline_item)
 
     def apply_scan_error(self, message: str) -> None:
+        if "邮箱登录失败" in message:
+            self.stop_auto_refresh()
+            self.status_label.setText(f"扫描失败：{message} 已暂停自动刷新。")
+            return
+
         self.status_label.setText(f"扫描失败：{message}")
 
     def detect_order_changes(self, rows: list) -> set[str]:

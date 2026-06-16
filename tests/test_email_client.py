@@ -1,5 +1,8 @@
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
+import imaplib
+
+import pytest
 
 from email_order_reader.email_client import (
     ImapEmailClient,
@@ -109,6 +112,28 @@ def test_imap_client_ignores_logout_eof_after_fetching_messages(monkeypatch):
     assert mailbox.logout_called
 
 
+def test_imap_client_reports_enterprise_wechat_login_failure_in_chinese(monkeypatch):
+    mailbox = FakeLoginFailureMailbox()
+
+    monkeypatch.setattr(
+        "email_order_reader.email_client.imaplib.IMAP4_SSL",
+        lambda server, port, timeout: mailbox,
+    )
+
+    client = ImapEmailClient(ImapConfig(server="imap.example.com", email="buyer@example.com", auth_code="secret"))
+
+    with pytest.raises(RuntimeError) as exc_info:
+        client.fetch_excel_attachments()
+
+    message = str(exc_info.value)
+    assert "邮箱登录失败" in message
+    assert "授权码" in message
+    assert "IMAP/SMTP" in message
+    assert "登录频率" in message
+    assert "b'" not in message
+    assert mailbox.logout_called
+
+
 def test_imap_client_fetches_incremental_messages_by_uid(monkeypatch):
     message = EmailMessage()
     message["Subject"] = "新订单"
@@ -212,6 +237,21 @@ class FakeLogoutEofMailbox(FakeMailbox):
 
         self.logout_called = True
         raise IMAP4.abort("command: LOGOUT => socket error: EOF")
+
+
+class FakeLoginFailureMailbox:
+    def __init__(self):
+        self.logout_called = False
+
+    def login(self, email, auth_code):
+        raise imaplib.IMAP4.error(
+            b"Login fail. Account is abnormal, service is not open, password is incorrect, "
+            b"login frequency limited, or system is busy."
+        )
+
+    def logout(self):
+        self.logout_called = True
+        return "OK", [b"LOGOUT"]
 
 
 class FakeUidMailbox:
