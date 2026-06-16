@@ -8,6 +8,7 @@ def test_github_actions_builds_windows_and_macos_artifacts():
     content = workflow.read_text(encoding="utf-8")
     assert "workflow_dispatch:" in content
     assert "push:" in content
+    assert "FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true" in content
     assert "build-windows:" in content
     assert "build-macos:" in content
     assert "windows-latest" in content
