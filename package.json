@@ -53,10 +53,12 @@
     ],
     "win": {
       "target": "nsis",
+      "icon": "assets/app_icon.ico",
       "artifactName": "OrderQuickReadSetup.${ext}"
     },
     "mac": {
       "target": "dmg",
+      "icon": "assets/app_icon.icns",
       "artifactName": "OrderQuickRead-macos-${arch}.${ext}",
       "category": "public.app-category.business"
     },

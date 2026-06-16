@@ -22,5 +22,7 @@ describe("Electron tooling", () => {
     expect(packageJson.name).toBe("order-quick-read");
     expect(packageJson.build.productName).toBe("Order Quick Read");
     expect(packageJson.build.appId).toBe("com.orderquickread.desktop");
+    expect(packageJson.build.win.icon).toBe("assets/app_icon.ico");
+    expect(packageJson.build.mac.icon).toBe("assets/app_icon.icns");
   });
 });

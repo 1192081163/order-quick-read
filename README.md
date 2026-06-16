@@ -1,111 +1,83 @@
 # 订单快读
 
-Order Quick Read is a minimal desktop app for scanning IMAP email attachments and showing order deadlines.
+Order Quick Read is a minimal Electron desktop app for reading Enterprise WeChat/Tencent Exmail order emails and Excel attachments.
 
-## Behavior
+## 功能
 
-- Scans all email in the inbox.
-- Uses Enterprise WeChat/Tencent Exmail IMAP defaults internally: `imap.exmail.qq.com:993`.
-- Reads Excel attachments with `.xlsx`, `.xlsm`, or `.xls` extensions.
-- Shows only two columns: `订单号` and `截至时间`.
-- Sorts orders by deadline with the nearest deadline first.
-- Auto-refreshes every 30 seconds after mailbox settings are saved.
-- Shows a desktop tray notification and highlights rows when new or updated orders are found.
-- Checks GitHub Releases for updates. After a new package is downloaded, the app asks before installing, then opens the new package, quits the old app, and tries to delete the old app file.
-- Shows only email address and authorization code in the mailbox settings area, then collapses it after both are filled.
-- Saves mailbox email address and authorization code locally so they are restored on the next launch.
-- Saves a local lightweight order cache for faster refreshes; it does not store email bodies or attachment files.
+- 默认使用企业微信邮箱 IMAP：`imap.exmail.qq.com:993`。
+- 读取邮件里的 `.xlsx`、`.xlsm`、`.xls` 附件。
+- 前台只显示两列：`订单号` 和 `截至时间`。
+- 按截止时间排序，并支持按订单号、发送日期筛选。
+- 邮箱和授权码保存到本机，启动后自动填入；配置完整后设置区自动收起。
+- 每 30 秒自动刷新新邮件，也可以手动刷新或扫描全部邮件。
+- 发现新增订单或截止时间变化时发出系统通知。
+- 启动时静默检查 GitHub Release，也可以点击 `检查更新`；发现新版后下载到本机并打开安装包。
 
-Settings are stored in a local JSON file:
+## 本地数据
+
+Electron 版使用系统应用数据目录：
+
+```text
+Windows: %APPDATA%\Order Quick Read\settings.json
+macOS: ~/Library/Application Support/Order Quick Read/settings.json
+```
+
+订单缓存保存在同一目录的 `order_cache.json`。缓存只保存提取后的订单信息，不保存邮件正文或附件文件。
+
+旧版 Python 应用的配置会自动迁移：
 
 ```text
 Windows: %APPDATA%\EmailOrderReader\settings.json
 macOS/Linux: ~/.email-order-reader/settings.json
 ```
 
-On Windows, an older config at this path is copied into `%APPDATA%` automatically if needed:
+授权码是本地 JSON 保存，不写入系统钥匙串。
 
-```text
-~/.email-order-reader/settings.json
-```
-
-The authorization code is stored in this local file, not in the system keychain.
-
-The order cache is stored next to the settings file as `order_cache.json`.
-
-## Development
-
-Use Python 3.11 or newer.
+## 开发
 
 ```bash
-python3.11 -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -e ".[dev]"
-python -m pytest
+npm ci
+npm run electron:dev
 ```
 
-## Run
+常用检查：
 
 ```bash
-email-order-reader
+npm run electron:test
+npm run electron:typecheck
+npm run electron:build:main
 ```
 
-## Package
+旧版 Python 测试仍可运行：
 
-GitHub Actions:
+```bash
+python -m pytest -q
+```
 
-Push the project to GitHub, then open Releases for direct downloads:
+## 本地打包
+
+```bash
+npm run electron:build
+```
+
+产物输出到：
 
 ```text
-OrderQuickRead.exe
+dist-electron-packages/
+```
+
+## GitHub Release 下载
+
+推送到 `main` 后，GitHub Actions 会构建并发布：
+
+```text
+OrderQuickReadSetup.exe
 OrderQuickRead-macos-x64.dmg
 OrderQuickRead-macos-arm64.dmg
 ```
 
-On Windows, download `OrderQuickRead.exe` and double-click to run.
+Windows 用户下载 `OrderQuickReadSetup.exe`，双击安装。
 
-On macOS Intel, download `OrderQuickRead-macos-x64.dmg`, open it, then open `Order Quick Read.app`.
+macOS Intel 下载 `OrderQuickRead-macos-x64.dmg`；Apple Silicon 下载 `OrderQuickRead-macos-arm64.dmg`。
 
-On macOS Apple Silicon, download `OrderQuickRead-macos-arm64.dmg`, open it, then open `Order Quick Read.app`.
-
-Unsigned internal macOS builds may be blocked by Gatekeeper on first open. If macOS blocks the app because it is not notarized, right-click `Order Quick Read.app`, choose `Open`, then confirm.
-
-Apps built locally may open without that prompt because they are not browser-downloaded quarantine items. GitHub-downloaded macOS builds need Apple Developer ID signing and notarization to open by double-click without the Gatekeeper warning.
-
-GitHub Actions also uploads these build artifacts:
-
-```text
-order-quick-read-windows
-OrderQuickRead.exe
-order-quick-read-macos-x64
-OrderQuickRead-macos-x64.dmg
-order-quick-read-macos-arm64
-OrderQuickRead-macos-arm64.dmg
-```
-
-macOS:
-
-```bash
-bash scripts/build_macos.sh
-```
-
-Windows PowerShell:
-
-```powershell
-.\scripts\build_windows.ps1
-```
-
-The Windows build output is:
-
-```text
-dist\Order Quick Read\Order Quick Read.exe
-```
-
-The macOS direct-download output is:
-
-```text
-dist/OrderQuickRead.dmg
-```
-
-Unsigned internal builds may show Windows SmartScreen or macOS Gatekeeper warnings.
+当前内部版本未做 Apple Developer ID 签名和 notarization。macOS 首次打开如果提示无法验证，需要右键 `Order Quick Read.app`，选择 `打开` 后确认。
