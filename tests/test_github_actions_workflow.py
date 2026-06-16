@@ -21,14 +21,20 @@ def test_github_actions_builds_windows_and_macos_artifacts():
     assert "actions/checkout@v6" in content
     assert "actions/setup-python@v6" in content
     assert "actions/upload-artifact@v7" in content
+    assert "actions/download-artifact@v8" in content
     assert "actions/checkout@v4" not in content
     assert "actions/setup-python@v5" not in content
     assert "actions/upload-artifact@v4" not in content
     assert "dist/Email Order Reader" in content
     assert "dist/EmailOrderReader.exe" in content
+    assert "dist/EmailOrderReader.dmg" in content
     assert "EmailOrderReader.exe#EmailOrderReader.exe" in content
+    assert "EmailOrderReader.dmg#EmailOrderReader.dmg" in content
+    assert "build-release:" in content
+    assert "needs: [build-windows, build-macos]" in content
     assert "GH_TOKEN: ${{ github.token }}" in content
     assert "gh release create" in content
+    assert content.count("gh release create") == 1
     assert "matrix:" not in content
 
 
@@ -37,3 +43,12 @@ def test_macos_build_script_bundles_excel_parser_dependencies():
 
     assert "--hidden-import openpyxl" in script
     assert "--hidden-import xlrd" in script
+
+
+def test_macos_build_script_creates_direct_clickable_dmg():
+    script = Path("scripts/build_macos.sh").read_text(encoding="utf-8")
+
+    assert 'APP_PATH="dist/Email Order Reader.app"' in script
+    assert 'DMG_PATH="dist/EmailOrderReader.dmg"' in script
+    assert "hdiutil create" in script
+    assert '-format UDZO "$DMG_PATH"' in script

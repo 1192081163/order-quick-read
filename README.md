@@ -54,18 +54,24 @@ email-order-reader
 
 GitHub Actions:
 
-Push the project to GitHub, then open Releases for the direct Windows download:
+Push the project to GitHub, then open Releases for direct downloads:
 
 ```text
 EmailOrderReader.exe
+EmailOrderReader.dmg
 ```
 
-Download it and double-click to run. GitHub Actions also uploads these build artifacts:
+On Windows, download `EmailOrderReader.exe` and double-click to run.
+
+On macOS, download `EmailOrderReader.dmg`, open it, then open `Email Order Reader.app`.
+
+GitHub Actions also uploads these build artifacts:
 
 ```text
 email-order-reader-windows
 EmailOrderReader.exe
 email-order-reader-macos
+EmailOrderReader.dmg
 ```
 
 macOS:
@@ -84,6 +90,12 @@ The Windows build output is:
 
 ```text
 dist\Email Order Reader\Email Order Reader.exe
+```
+
+The macOS direct-download output is:
+
+```text
+dist/EmailOrderReader.dmg
 ```
 
 Unsigned internal builds may show Windows SmartScreen or macOS Gatekeeper warnings.
