@@ -1,10 +1,201 @@
+import { useEffect, useMemo, useState } from "react";
+
+import { filterOrderRows } from "../shared/filtering";
+import { sortOrderRows } from "../shared/sorting";
+import type { AppSettings, DateFilter, OrderRow, RendererApi, ScanResult } from "../shared/types";
+import { FilterBar } from "./components/FilterBar";
+import { OrderTable } from "./components/OrderTable";
+import { SettingsPanel } from "./components/SettingsPanel";
+import { StatusBar } from "./components/StatusBar";
+import { Toolbar } from "./components/Toolbar";
+
+const EMPTY_SETTINGS: AppSettings = { email: "", authCode: "" };
+const EMPTY_FILTER: DateFilter = { searchText: "", startDate: "", endDate: "" };
+
+function hasCompleteSettings(settings: AppSettings): boolean {
+  return Boolean(settings.email.trim() && settings.authCode);
+}
+
+function statusFromError(error: unknown): string {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+  if (typeof error === "string" && error) {
+    return error;
+  }
+  return "操作失败。";
+}
+
+function scanStatus(result: ScanResult): string {
+  return `扫描到 ${result.scannedMessages} 封邮件，找到 ${result.parsedAttachments} 个 Excel 附件，读取 ${result.rows.length} 条订单。`;
+}
+
+function rendererApi(): RendererApi | null {
+  return window.orderQuickRead ?? null;
+}
+
 export function App() {
+  const [settings, setSettings] = useState<AppSettings>(EMPTY_SETTINGS);
+  const [editingSettings, setEditingSettings] = useState(true);
+  const [rows, setRows] = useState<OrderRow[]>([]);
+  const [filter, setFilter] = useState<DateFilter>(EMPTY_FILTER);
+  const [status, setStatus] = useState("请填写邮箱和授权码。");
+  const [isBusy, setIsBusy] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadSettings() {
+      try {
+        const api = rendererApi();
+        if (!api) {
+          setStatus("桌面接口尚未连接。请在 Electron 应用中打开。");
+          return;
+        }
+
+        const loadedSettings = await api.loadSettings();
+        if (!isMounted) {
+          return;
+        }
+
+        setSettings(loadedSettings);
+        if (hasCompleteSettings(loadedSettings)) {
+          setEditingSettings(false);
+          setStatus("已加载保存的邮箱。");
+          return;
+        }
+
+        setEditingSettings(true);
+        setStatus("请填写邮箱和授权码。");
+      } catch (error) {
+        if (isMounted) {
+          setStatus(statusFromError(error));
+        }
+      }
+    }
+
+    void loadSettings();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const displayRows = useMemo(() => filterOrderRows(sortOrderRows(rows), filter), [rows, filter]);
+
+  async function saveSettings(): Promise<boolean> {
+    const nextSettings = {
+      email: settings.email.trim(),
+      authCode: settings.authCode,
+    };
+
+    if (!hasCompleteSettings(nextSettings)) {
+      setEditingSettings(true);
+      setStatus("请填写邮箱和授权码。");
+      return false;
+    }
+
+    try {
+      setIsBusy(true);
+      const api = rendererApi();
+      if (!api) {
+        setStatus("桌面接口尚未连接。请在 Electron 应用中打开。");
+        return false;
+      }
+
+      await api.saveSettings(nextSettings);
+      setSettings(nextSettings);
+      setEditingSettings(false);
+      setStatus("已保存邮箱设置。");
+      return true;
+    } catch (error) {
+      setStatus(statusFromError(error));
+      return false;
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function ensureReadyForScan(): Promise<boolean> {
+    if (editingSettings) {
+      return saveSettings();
+    }
+
+    if (!hasCompleteSettings(settings)) {
+      setEditingSettings(true);
+      setStatus("请填写邮箱和授权码。");
+      return false;
+    }
+
+    return true;
+  }
+
+  async function scan(fullScan: boolean) {
+    if (!(await ensureReadyForScan())) {
+      return;
+    }
+
+    try {
+      setIsBusy(true);
+      setStatus(fullScan ? "正在扫描全部邮件..." : "正在刷新新邮件...");
+      const api = rendererApi();
+      if (!api) {
+        setStatus("桌面接口尚未连接。请在 Electron 应用中打开。");
+        return;
+      }
+
+      const result = await api.scanOrders({ fullScan });
+      setRows(result.rows);
+      setStatus(scanStatus(result));
+    } catch (error) {
+      setStatus(statusFromError(error));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function checkUpdate() {
+    try {
+      setIsBusy(true);
+      setStatus("正在检查更新...");
+      const api = rendererApi();
+      if (!api) {
+        setStatus("桌面接口尚未连接。请在 Electron 应用中打开。");
+        return;
+      }
+
+      const update = await api.checkUpdates();
+      setStatus(update ? `发现新版本 ${update.tagName}` : "当前已是最新版本。");
+    } catch (error) {
+      setStatus(statusFromError(error));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
   return (
     <main className="app-shell">
-      <section className="panel">
-        <h1>订单快读</h1>
-        <p>Electron 版本初始化完成。</p>
-      </section>
+      {editingSettings ? (
+        <SettingsPanel
+          disabled={isBusy}
+          settings={settings}
+          onChange={setSettings}
+          onSave={() => void saveSettings()}
+          onScanAll={() => void scan(true)}
+        />
+      ) : (
+        <Toolbar
+          disabled={isBusy}
+          email={settings.email}
+          onRefresh={() => void scan(false)}
+          onScanAll={() => void scan(true)}
+          onCheckUpdate={() => void checkUpdate()}
+          onEditSettings={() => setEditingSettings(true)}
+        />
+      )}
+      <FilterBar filter={filter} onChange={setFilter} />
+      <OrderTable rows={displayRows} />
+      <StatusBar status={status} />
     </main>
   );
 }
