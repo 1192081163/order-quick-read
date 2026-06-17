@@ -1,4 +1,15 @@
-import { Badge, Button, Text, Title3 } from "@fluentui/react-components";
+import {
+  Badge,
+  Button,
+  Menu,
+  MenuButton,
+  MenuItem,
+  MenuList,
+  MenuPopover,
+  MenuTrigger,
+  Text,
+  Title3,
+} from "@fluentui/react-components";
 
 type Props = {
   disabled: boolean;
@@ -26,18 +37,27 @@ export function Toolbar({ disabled, email, onRefresh, onScanAll, onClearCache, o
         <Button appearance="primary" disabled={disabled} onClick={onRefresh}>
           刷新
         </Button>
-      <Button disabled={disabled} onClick={onScanAll}>
-        扫描全部邮件
-      </Button>
-      <Button disabled={disabled} onClick={onClearCache}>
-        清空缓存
-      </Button>
-      <Button disabled={disabled} onClick={onCheckUpdate}>
-        检查更新
+        <Button disabled={disabled} onClick={onScanAll}>
+          同步近一个月
         </Button>
-        <Button disabled={disabled} onClick={onEditSettings}>
-          修改邮箱设置
-        </Button>
+        <Menu>
+          <MenuTrigger disableButtonEnhancement>
+            <MenuButton disabled={disabled}>更多操作</MenuButton>
+          </MenuTrigger>
+          <MenuPopover>
+            <MenuList>
+              <MenuItem disabled={disabled} onClick={onClearCache}>
+                清空缓存
+              </MenuItem>
+              <MenuItem disabled={disabled} onClick={onCheckUpdate}>
+                检查更新
+              </MenuItem>
+              <MenuItem disabled={disabled} onClick={onEditSettings}>
+                修改邮箱设置
+              </MenuItem>
+            </MenuList>
+          </MenuPopover>
+        </Menu>
       </div>
     </section>
   );

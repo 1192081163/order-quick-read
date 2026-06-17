@@ -15,10 +15,7 @@
   "dependencies": {
     "@fluentui/react-components": "^9.74.1",
     "@fluentui/react-datepicker-compat": "^0.6.32",
-    "electron-log": "^5.0.0",
-    "electron-updater": "^6.0.0",
     "imapflow": "^1.0.0",
-    "mailparser": "^3.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "xlsx": "^0.18.5"
@@ -26,7 +23,6 @@
   "devDependencies": {
     "@testing-library/jest-dom": "^6.0.0",
     "@testing-library/react": "^16.0.0",
-    "@types/mailparser": "^3.0.0",
     "@types/node": "^24.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",

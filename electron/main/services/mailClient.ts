@@ -1,6 +1,7 @@
 import { ImapFlow, type ImapFlowOptions, type MessageStructureObject } from "imapflow";
 
 import { sentDateFromMessageDate } from "../../shared/date.js";
+import type { ScanMetrics } from "../../shared/types.js";
 
 const SUPPORTED_EXCEL_EXTENSION = /\.(xlsx|xlsm|xls)$/i;
 const MAX_ATTACHMENT_DOWNLOADS = 3;
@@ -21,19 +22,24 @@ export type EmailAttachment = {
   messageSubject: string;
   messageDate: string;
   messageUid: number;
+  messagePart: string;
 };
 
 export type AttachmentBatch = {
   attachments: EmailAttachment[];
+  cachedAttachmentKeys?: string[];
   scannedMessages: number;
   latestUid: number;
   uidvalidity: string;
+  metrics?: AttachmentFetchMetrics;
 };
 
 export type AttachmentFetchOptions = {
   sinceUid?: number;
   sentStartDate?: string;
   sentEndDate?: string;
+  cachedAttachmentKeys?: string[];
+  includeMetrics?: boolean;
 };
 
 export type AttachmentClient = {
@@ -63,6 +69,11 @@ type SentDateRange = {
   endDate?: string;
 };
 
+type AttachmentFetchMetrics = Pick<
+  ScanMetrics,
+  "connectMs" | "searchMs" | "fetchMs" | "downloadMs" | "cacheHits" | "retryCount"
+>;
+
 export class ImapAttachmentClient implements AttachmentClient {
   private client: ImapFlow | null = null;
   private connecting: Promise<ImapFlow> | null = null;
@@ -70,8 +81,29 @@ export class ImapAttachmentClient implements AttachmentClient {
   constructor(private readonly config: ImapConfig) {}
 
   async fetchExcelAttachmentBatch(options: AttachmentFetchOptions): Promise<AttachmentBatch> {
+    try {
+      return await this.fetchExcelAttachmentBatchOnce(options, 0);
+    } catch (error) {
+      if (!isTransientMailError(error)) {
+        throw error;
+      }
+
+      await this.close();
+      return this.fetchExcelAttachmentBatchOnce(options, 1);
+    }
+  }
+
+  private async fetchExcelAttachmentBatchOnce(
+    options: AttachmentFetchOptions,
+    retryCount: number,
+  ): Promise<AttachmentBatch> {
+    const metrics = options.includeMetrics ? createFetchMetrics(retryCount) : undefined;
+    const connectStarted = nowMs();
     const client = await this.connectedClient();
+    addElapsed(metrics, "connectMs", connectStarted);
     const attachments: EmailAttachment[] = [];
+    const cachedAttachmentKeys: string[] = [];
+    const requestedCachedAttachmentKeys = new Set(options.cachedAttachmentKeys ?? []);
     const downloadJobs: AttachmentDownloadJob[] = [];
     let scannedMessages = 0;
     let latestUid = options.sinceUid ?? 0;
@@ -81,17 +113,20 @@ export class ImapAttachmentClient implements AttachmentClient {
     try {
       const lock = await client.getMailboxLock("INBOX");
       try {
-        const mailbox = client.mailbox as SelectedMailbox | false;
-        uidvalidity = mailbox ? String(mailbox.uidValidity ?? "") : "";
-        if (isNoNewUidRange(options.sinceUid, mailbox ? mailbox.uidNext : undefined)) {
-          return { attachments, scannedMessages, latestUid, uidvalidity };
-        }
+      const mailbox = client.mailbox as SelectedMailbox | false;
+      uidvalidity = mailbox ? String(mailbox.uidValidity ?? "") : "";
+      if (isNoNewUidRange(options.sinceUid, mailbox ? mailbox.uidNext : undefined)) {
+        return attachmentBatch({ attachments, cachedAttachmentKeys, scannedMessages, latestUid, uidvalidity, metrics });
+      }
 
-          const fetchRange = await createFetchRange(client, options.sinceUid, sentDateRange);
-          if (Array.isArray(fetchRange) && fetchRange.length === 0) {
-            return { attachments, scannedMessages, latestUid, uidvalidity };
-          }
-          for await (const message of client.fetch(
+      const searchStarted = nowMs();
+      const fetchRange = await createFetchRange(client, options.sinceUid, sentDateRange);
+      addElapsed(metrics, "searchMs", searchStarted);
+      if (Array.isArray(fetchRange) && fetchRange.length === 0) {
+        return attachmentBatch({ attachments, cachedAttachmentKeys, scannedMessages, latestUid, uidvalidity, metrics });
+      }
+      const fetchStarted = nowMs();
+      for await (const message of client.fetch(
             fetchRange,
             { uid: true, envelope: true, internalDate: true, bodyStructure: true, headers: ["date"] },
           { uid: true },
@@ -108,24 +143,42 @@ export class ImapAttachmentClient implements AttachmentClient {
           }
 
           scannedMessages += 1;
-          const excelParts = collectExcelBodyParts(message.bodyStructure);
-          if (excelParts.length === 0) {
-            continue;
-          }
-
-          downloadJobs.push({
-            uid: message.uid,
-            excelParts,
-            messageSubject,
-            messageDate,
-          });
+        const excelParts = collectExcelBodyParts(message.bodyStructure);
+        if (excelParts.length === 0) {
+          continue;
         }
 
-        const downloadedAttachments = await mapWithConcurrency(
-          downloadJobs,
-          MAX_ATTACHMENT_DOWNLOADS,
-          async (job) => downloadExcelAttachments(client, job),
-        );
+        const partsToDownload = excelParts.filter((part) => {
+          const key = attachmentCacheKey(uidvalidity, message.uid, part.part, part.filename);
+          if (requestedCachedAttachmentKeys.has(key)) {
+          cachedAttachmentKeys.push(key);
+          if (metrics) {
+            metrics.cacheHits += 1;
+          }
+          return false;
+          }
+          return true;
+        });
+        if (partsToDownload.length === 0) {
+          continue;
+        }
+
+        downloadJobs.push({
+          uid: message.uid,
+          excelParts: partsToDownload,
+          messageSubject,
+          messageDate,
+        });
+      }
+      addElapsed(metrics, "fetchMs", fetchStarted);
+
+      const downloadStarted = nowMs();
+      const downloadedAttachments = await mapWithConcurrency(
+        downloadJobs,
+        MAX_ATTACHMENT_DOWNLOADS,
+        async (job) => downloadExcelAttachments(client, job),
+      );
+      addElapsed(metrics, "downloadMs", downloadStarted);
         for (const attachmentGroup of downloadedAttachments) {
           attachments.push(...attachmentGroup);
         }
@@ -137,7 +190,7 @@ export class ImapAttachmentClient implements AttachmentClient {
       throw error;
     }
 
-    return { attachments, scannedMessages, latestUid, uidvalidity };
+    return attachmentBatch({ attachments, cachedAttachmentKeys, scannedMessages, latestUid, uidvalidity, metrics });
   }
 
   async close(): Promise<void> {
@@ -156,6 +209,7 @@ export class ImapAttachmentClient implements AttachmentClient {
     }
 
     const client = new ImapFlow(this.createClientOptions());
+    this.attachClientErrorHandler(client);
     this.connecting = client
       .connect()
       .then(() => {
@@ -184,6 +238,15 @@ export class ImapAttachmentClient implements AttachmentClient {
         pass: this.config.authCode,
       },
     };
+  }
+
+  private attachClientErrorHandler(client: ImapFlow): void {
+    client.on("error", (error: unknown) => {
+      if (this.client === client) {
+        this.client = null;
+      }
+      console.warn("邮箱连接异常：", exceptionText(error));
+    });
   }
 }
 
@@ -291,10 +354,59 @@ async function downloadExcelAttachments(client: ImapFlow, job: AttachmentDownloa
       messageSubject: job.messageSubject,
       messageDate: job.messageDate,
       messageUid: job.uid,
+      messagePart: excelPart.part,
     });
   }
 
   return attachments;
+}
+
+export function attachmentCacheKey(
+  uidvalidity: string,
+  messageUid: number,
+  messagePart: string,
+  filename: string,
+): string {
+  return [uidvalidity, String(messageUid), messagePart, filename].map((part) => encodeURIComponent(part)).join("|");
+}
+
+function attachmentBatch(batch: AttachmentBatch & { cachedAttachmentKeys: string[] }): AttachmentBatch {
+  if (batch.cachedAttachmentKeys.length === 0) {
+    const { cachedAttachmentKeys: _cachedAttachmentKeys, ...rest } = batch;
+    return rest;
+  }
+  return batch;
+}
+
+function createFetchMetrics(retryCount: number): AttachmentFetchMetrics {
+  return {
+    connectMs: 0,
+    searchMs: 0,
+    fetchMs: 0,
+    downloadMs: 0,
+    cacheHits: 0,
+    retryCount,
+  };
+}
+
+function addElapsed(metrics: AttachmentFetchMetrics | undefined, key: keyof AttachmentFetchMetrics, startedAt: number): void {
+  if (!metrics || key === "cacheHits" || key === "retryCount") {
+    return;
+  }
+  metrics[key] += nowMs() - startedAt;
+}
+
+function nowMs(): number {
+  return performance.now();
+}
+
+function isTransientMailError(error: unknown): boolean {
+  const code = typeof error === "object" && error !== null && "code" in error ? String(error.code) : "";
+  if (["ETIMEOUT", "ETIMEDOUT", "ECONNRESET", "EPIPE", "EHOSTUNREACH"].includes(code)) {
+    return true;
+  }
+
+  return exceptionText(error).toLowerCase().includes("socket timeout");
 }
 
 async function mapWithConcurrency<TInput, TResult>(

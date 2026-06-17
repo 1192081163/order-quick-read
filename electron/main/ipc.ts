@@ -1,9 +1,10 @@
-import { app, ipcMain, shell } from "electron";
+import { app, ipcMain, shell, type IpcMainInvokeEvent } from "electron";
 import { join } from "node:path";
 
 import {
   IPC_CHANNELS,
   type AppSettings,
+  type BackgroundBackfillStatus,
   type ScanOrdersRequest,
   type ScanResult,
   type UpdateInfo,
@@ -44,7 +45,9 @@ export function registerIpcHandlers(): void {
     await saveSettings({ settingsPath: appDataPath("settings.json") }, settings);
   });
 
-  ipcMain.handle(IPC_CHANNELS.scanOrders, async (_event, options: ScanOrdersRequest) => scanStoredMailbox(options));
+  ipcMain.handle(IPC_CHANNELS.scanOrders, async (event, options: ScanOrdersRequest) =>
+    scanStoredMailbox(options, (status) => sendBackfillStatus(event, status)),
+  );
 
   ipcMain.handle(IPC_CHANNELS.clearCache, async () => {
     await clearOrderCache(appDataPath("order_cache.json"));
@@ -77,7 +80,14 @@ async function loadStoredSettings(): Promise<AppSettings> {
   });
 }
 
-async function scanStoredMailbox(options: ScanOrdersRequest): Promise<ScanResult> {
+function sendBackfillStatus(event: IpcMainInvokeEvent, status: BackgroundBackfillStatus): void {
+  event.sender.send(IPC_CHANNELS.backfillStatus, status);
+}
+
+async function scanStoredMailbox(
+  options: ScanOrdersRequest,
+  onBackgroundBackfillStatus?: (status: BackgroundBackfillStatus) => void,
+): Promise<ScanResult> {
   const settings = await loadStoredSettings();
   if (!settings.email || !settings.authCode) {
     throw new Error("请先填写并保存企业微信邮箱和授权码。");
@@ -89,8 +99,13 @@ async function scanStoredMailbox(options: ScanOrdersRequest): Promise<ScanResult
   const result = await scanOrders({
     client,
     fullScan: options.fullScan,
+    includeMetrics: options.includeMetrics,
     sentStartDate: options.sentStartDate,
     sentEndDate: options.sentEndDate,
+    backgroundBackfill: options.backgroundBackfill,
+    backgroundSentStartDate: options.backgroundSentStartDate,
+    backgroundSentEndDate: options.backgroundSentEndDate,
+    onBackgroundBackfillStatus,
     cachePath,
     accountEmail: settings.email,
   });

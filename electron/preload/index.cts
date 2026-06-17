@@ -1,4 +1,4 @@
-import type { AppSettings, RendererApi, ScanOrdersRequest, UpdateInfo } from "../shared/types.js";
+import type { AppSettings, BackgroundBackfillStatus, RendererApi, ScanOrdersRequest, UpdateInfo } from "../shared/types.js";
 
 const { contextBridge, ipcRenderer } = require("electron") as typeof import("electron");
 
@@ -6,6 +6,7 @@ const IPC_CHANNELS = {
   loadSettings: "settings:load",
   saveSettings: "settings:save",
   scanOrders: "orders:scan",
+  backfillStatus: "orders:backfill:status",
   clearCache: "orders:cache:clear",
   checkUpdates: "updates:check",
   downloadUpdate: "updates:download",
@@ -16,6 +17,11 @@ const api: RendererApi = {
   loadSettings: () => ipcRenderer.invoke(IPC_CHANNELS.loadSettings),
   saveSettings: (settings: AppSettings) => ipcRenderer.invoke(IPC_CHANNELS.saveSettings, settings),
   scanOrders: (options: ScanOrdersRequest) => ipcRenderer.invoke(IPC_CHANNELS.scanOrders, options),
+  onBackfillStatus: (handler: (status: BackgroundBackfillStatus) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, status: BackgroundBackfillStatus) => handler(status);
+    ipcRenderer.on(IPC_CHANNELS.backfillStatus, listener);
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.backfillStatus, listener);
+  },
   clearCache: () => ipcRenderer.invoke(IPC_CHANNELS.clearCache),
   checkUpdates: () => ipcRenderer.invoke(IPC_CHANNELS.checkUpdates),
   downloadUpdate: (update: UpdateInfo) => ipcRenderer.invoke(IPC_CHANNELS.downloadUpdate, update),

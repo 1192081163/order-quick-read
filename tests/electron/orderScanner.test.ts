@@ -5,7 +5,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { scanOrders } from "../../electron/main/services/orderScanner";
-import type { EmailAttachment } from "../../electron/main/services/mailClient";
+import { attachmentCacheKey, type EmailAttachment } from "../../electron/main/services/mailClient";
 import type { OrderRow } from "../../electron/shared/types";
 
 type MockImapMessage = {
@@ -28,10 +28,11 @@ type MockImapMessage = {
 };
 
 const mailMocks = vi.hoisted(() => {
-  type MockClient = {
-    connect: ReturnType<typeof vi.fn>;
-    getMailboxLock: ReturnType<typeof vi.fn>;
-    search: ReturnType<typeof vi.fn>;
+    type MockClient = {
+      on: ReturnType<typeof vi.fn>;
+      connect: ReturnType<typeof vi.fn>;
+      getMailboxLock: ReturnType<typeof vi.fn>;
+      search: ReturnType<typeof vi.fn>;
     fetch: ReturnType<typeof vi.fn>;
     downloadMany: ReturnType<typeof vi.fn>;
     logout: ReturnType<typeof vi.fn>;
@@ -45,12 +46,12 @@ const mailMocks = vi.hoisted(() => {
     uidValidity: 123n,
     uidNext: 10,
     connectError: null as Error | null,
-    simpleParser: vi.fn(),
     downloads: new Map<string, Buffer>(),
     beforeDownloadMany: null as null | ((range: string, parts: string[]) => Promise<void>),
     ImapFlow: vi.fn((options: unknown) => {
       const release = vi.fn();
       const client: MockClient = {
+        on: vi.fn(),
         connect: vi.fn(async () => {
           if (state.connectError) {
             throw state.connectError;
@@ -86,10 +87,6 @@ vi.mock("imapflow", () => ({
   ImapFlow: mailMocks.ImapFlow,
 }));
 
-vi.mock("mailparser", () => ({
-  simpleParser: mailMocks.simpleParser,
-}));
-
 let tempDir: string;
 
 beforeEach(async () => {
@@ -102,7 +99,6 @@ beforeEach(async () => {
   mailMocks.connectError = null;
   mailMocks.downloads = new Map();
   mailMocks.beforeDownloadMany = null;
-  mailMocks.simpleParser.mockReset();
   mailMocks.ImapFlow.mockClear();
 });
 
@@ -117,6 +113,7 @@ function attachment(filename: string, uid: number, subject = "orders"): EmailAtt
     messageSubject: subject,
     messageDate: "2026-06-16T09:00:00.000Z",
     messageUid: uid,
+    messagePart: "1",
   };
 }
 
@@ -224,6 +221,218 @@ describe("Electron order scanner", () => {
     });
     expect(result.rows.map((item) => item.orderNumber)).toEqual(["PO-18"]);
     await expect(readFile(cachePath, "utf-8").then(JSON.parse)).resolves.toMatchObject(existingCache);
+  });
+
+  it("reuses cached attachment rows for date-scoped scans", async () => {
+    const cachePath = path.join(tempDir, "order-cache.json");
+    const cachedKey = attachmentCacheKey("abc", 18, "1", "orders-18.xlsx");
+    const cachedRow = row("PO-18", "2026-06-21", "orders-18.xlsx");
+    await writeFile(
+      cachePath,
+      JSON.stringify({
+        email: "buyer@example.com",
+        uidvalidity: "abc",
+        lastUid: 30,
+        rows: [cachedRow],
+        warnings: [],
+        scannedMessages: 30,
+        parsedAttachments: 1,
+        parsedAttachmentCache: [
+          {
+            key: cachedKey,
+            rows: [cachedRow],
+            warnings: [],
+          },
+        ],
+      }),
+      "utf-8",
+    );
+    const client = {
+      fetchExcelAttachmentBatch: vi.fn(async () => ({
+        attachments: [],
+        cachedAttachmentKeys: [cachedKey],
+        scannedMessages: 1,
+        latestUid: 18,
+        uidvalidity: "abc",
+      })),
+    };
+    const parseAttachment = vi.fn();
+
+    const result = await scanOrders({
+      client,
+      parseAttachment,
+      fullScan: true,
+      cachePath,
+      accountEmail: "buyer@example.com",
+      sentStartDate: "2026-06-18",
+      sentEndDate: "2026-06-18",
+    });
+
+    expect(client.fetchExcelAttachmentBatch).toHaveBeenCalledWith({
+      sinceUid: undefined,
+      sentStartDate: "2026-06-18",
+      sentEndDate: "2026-06-18",
+      cachedAttachmentKeys: [cachedKey],
+    });
+    expect(parseAttachment).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      rows: [cachedRow],
+      warnings: [],
+      scannedMessages: 1,
+      parsedAttachments: 1,
+      scanMode: "full",
+    });
+  });
+
+  it("returns recent date scans first and rebuilds the full cache in the background", async () => {
+    const cachePath = path.join(tempDir, "order-cache.json");
+    const client = {
+      fetchExcelAttachmentBatch: vi
+        .fn()
+        .mockResolvedValueOnce({
+          attachments: [attachment("recent.xlsx", 18)],
+          scannedMessages: 1,
+          latestUid: 18,
+          uidvalidity: "abc",
+        })
+        .mockResolvedValueOnce({
+          attachments: [attachment("history.xlsx", 30)],
+          scannedMessages: 30,
+          latestUid: 30,
+          uidvalidity: "abc",
+        }),
+    };
+    const parseAttachment = vi
+      .fn()
+      .mockReturnValueOnce({
+        filename: "recent.xlsx",
+        rows: [row("PO-RECENT", "2026-06-21", "recent.xlsx")],
+        warnings: [],
+      })
+      .mockReturnValueOnce({
+        filename: "history.xlsx",
+        rows: [row("PO-HISTORY", "2026-06-10", "history.xlsx")],
+        warnings: [],
+      });
+
+    const result = await scanOrders({
+      client,
+      parseAttachment,
+      fullScan: true,
+      cachePath,
+      accountEmail: "buyer@example.com",
+      sentStartDate: "2026-06-11",
+      sentEndDate: "2026-06-17",
+      backgroundBackfill: true,
+      backgroundSentStartDate: "2026-05-19",
+      backgroundSentEndDate: "2026-06-17",
+    });
+
+    expect(result.rows.map((item) => item.orderNumber)).toEqual(["PO-RECENT"]);
+    expect(client.fetchExcelAttachmentBatch).toHaveBeenNthCalledWith(1, {
+      sinceUid: undefined,
+      sentStartDate: "2026-06-11",
+      sentEndDate: "2026-06-17",
+    });
+
+    await vi.waitFor(() =>
+      expect(client.fetchExcelAttachmentBatch).toHaveBeenNthCalledWith(2, {
+        sinceUid: undefined,
+        sentStartDate: "2026-05-19",
+        sentEndDate: "2026-06-17",
+      }),
+    );
+    await expect(readFile(cachePath, "utf-8").then(JSON.parse)).resolves.toMatchObject({
+      email: "buyer@example.com",
+      uidvalidity: "abc",
+      lastUid: 30,
+      rows: [row("PO-HISTORY", "2026-06-10", "history.xlsx")],
+      scannedMessages: 30,
+      parsedAttachments: 1,
+    });
+  });
+
+  it("keeps only rows inside the cache date window when saving a ranged background scan", async () => {
+    const cachePath = path.join(tempDir, "order-cache.json");
+    const client = {
+      fetchExcelAttachmentBatch: vi.fn(async () => ({
+        attachments: [attachment("month.xlsx", 31)],
+        scannedMessages: 10,
+        latestUid: 31,
+        uidvalidity: "abc",
+      })),
+    };
+    const parseAttachment = vi.fn(() => ({
+      filename: "month.xlsx",
+      rows: [
+        { ...row("PO-OLD", "2026-06-20", "month.xlsx"), messageDate: "2026-05-01T09:00:00.000Z" },
+        { ...row("PO-NEW", "2026-06-20", "month.xlsx"), messageDate: "2026-06-01T09:00:00.000Z" },
+      ],
+      warnings: [],
+    }));
+
+    await scanOrders({
+      client,
+      parseAttachment,
+      fullScan: true,
+      cachePath,
+      accountEmail: "buyer@example.com",
+      sentStartDate: "2026-05-19",
+      sentEndDate: "2026-06-17",
+      cacheDateRangedScan: true,
+    });
+
+    await expect(readFile(cachePath, "utf-8").then(JSON.parse)).resolves.toMatchObject({
+      rows: [{ ...row("PO-NEW", "2026-06-20", "month.xlsx"), messageDate: "2026-06-01T09:00:00.000Z" }],
+      parsedAttachmentCache: [
+        {
+          rows: [{ ...row("PO-NEW", "2026-06-20", "month.xlsx"), messageDate: "2026-06-01T09:00:00.000Z" }],
+        },
+      ],
+    });
+  });
+
+  it("includes scan timing metrics when requested", async () => {
+    const client = {
+      fetchExcelAttachmentBatch: vi.fn(async () => ({
+        attachments: [attachment("orders.xlsx", 7)],
+        cachedAttachmentKeys: [],
+        scannedMessages: 1,
+        latestUid: 7,
+        uidvalidity: "abc",
+        metrics: {
+          connectMs: 1,
+          searchMs: 2,
+          fetchMs: 3,
+          downloadMs: 4,
+          cacheHits: 0,
+          retryCount: 0,
+        },
+      })),
+    };
+    const parseAttachment = vi.fn(() => ({
+      filename: "orders.xlsx",
+      rows: [row("PO-1", "2026-06-20")],
+      warnings: [],
+    }));
+
+    const result = await scanOrders({
+      client,
+      parseAttachment,
+      fullScan: true,
+      includeMetrics: true,
+    });
+
+    expect(result.metrics).toEqual({
+      totalMs: expect.any(Number),
+      connectMs: 1,
+      searchMs: 2,
+      fetchMs: 3,
+      downloadMs: 4,
+      parseMs: expect.any(Number),
+      cacheHits: 0,
+      retryCount: 0,
+    });
   });
 
   it("uses cache lastUid for incremental scans and accumulates merged cache metadata", async () => {
@@ -515,11 +724,10 @@ describe("IMAP attachment client", () => {
       "7:*",
       { uid: true, envelope: true, internalDate: true, bodyStructure: true, headers: ["date"] },
       { uid: true },
-    );
-    expect(mailMocks.clients[0].client.downloadMany).toHaveBeenCalledWith("7", ["2"], { uid: true });
-    expect(mailMocks.clients[0].client.downloadMany).toHaveBeenCalledWith("9", ["1", "2"], { uid: true });
-    expect(mailMocks.simpleParser).not.toHaveBeenCalled();
-    expect(mailMocks.clients[0].release).toHaveBeenCalledTimes(1);
+  );
+  expect(mailMocks.clients[0].client.downloadMany).toHaveBeenCalledWith("7", ["2"], { uid: true });
+  expect(mailMocks.clients[0].client.downloadMany).toHaveBeenCalledWith("9", ["1", "2"], { uid: true });
+  expect(mailMocks.clients[0].release).toHaveBeenCalledTimes(1);
     expect(mailMocks.clients[0].client.logout).not.toHaveBeenCalled();
     await client.close();
     expect(mailMocks.clients[0].client.logout).toHaveBeenCalledTimes(1);
@@ -531,6 +739,7 @@ describe("IMAP attachment client", () => {
           messageSubject: "fallback subject",
           messageDate: "2026-06-16T00:30:00+08:00",
           messageUid: 7,
+          messagePart: "2",
         },
         {
           filename: "macro.xlsm",
@@ -538,6 +747,7 @@ describe("IMAP attachment client", () => {
           messageSubject: "macro orders",
           messageDate: "2026-06-16T10:00:00.000Z",
           messageUid: 9,
+          messagePart: "1",
         },
         {
           filename: "legacy.xls",
@@ -545,10 +755,55 @@ describe("IMAP attachment client", () => {
           messageSubject: "macro orders",
           messageDate: "2026-06-16T10:00:00.000Z",
           messageUid: 9,
+          messagePart: "2",
         },
       ],
       scannedMessages: 2,
       latestUid: 9,
+      uidvalidity: "123",
+    });
+  });
+
+  it("skips cached Excel attachment body downloads", async () => {
+    mailMocks.messages = [
+      {
+        uid: 7,
+        headers: Buffer.from("Date: Tue, 16 Jun 2026 00:30:00 +0800\r\n"),
+        bodyStructure: {
+          type: "multipart/mixed",
+          childNodes: [
+            {
+              part: "2",
+              type: "application/octet-stream",
+              disposition: "attachment",
+              dispositionParameters: { filename: "orders.xlsx" },
+            },
+          ],
+        },
+        envelope: {
+          subject: "cached orders",
+          date: new Date("2026-06-16T08:00:00.000Z"),
+        },
+      },
+    ];
+    mailMocks.downloads.set("7:2", Buffer.from("xlsx"));
+    const { ImapAttachmentClient } = await import("../../electron/main/services/mailClient");
+    const client = new ImapAttachmentClient({
+      email: "buyer@example.com",
+      authCode: "secret",
+      host: "imap.example.com",
+    });
+
+    const result = await client.fetchExcelAttachmentBatch({
+      cachedAttachmentKeys: [attachmentCacheKey("123", 7, "2", "orders.xlsx")],
+    });
+
+    expect(mailMocks.clients[0].client.downloadMany).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      attachments: [],
+      cachedAttachmentKeys: [attachmentCacheKey("123", 7, "2", "orders.xlsx")],
+      scannedMessages: 1,
+      latestUid: 7,
       uidvalidity: "123",
     });
   });
@@ -622,6 +877,7 @@ describe("IMAP attachment client", () => {
           messageSubject: "selected orders",
           messageDate: "2026-06-18T09:00:00+08:00",
           messageUid: 8,
+          messagePart: "2",
         },
       ],
       scannedMessages: 1,
@@ -638,12 +894,6 @@ describe("IMAP attachment client", () => {
         source: Buffer.from("message-9"),
       },
     ];
-    mailMocks.simpleParser.mockResolvedValue({
-      subject: "should not parse",
-      headerLines: [],
-      attachments: [{ filename: "orders.xlsx", content: Buffer.from("xlsx") }],
-    });
-
     const { ImapAttachmentClient } = await import("../../electron/main/services/mailClient");
     const client = new ImapAttachmentClient({
       email: "buyer@example.com",
@@ -683,6 +933,77 @@ describe("IMAP attachment client", () => {
     await client.close();
 
     expect(mailMocks.clients[0].client.logout).toHaveBeenCalledTimes(1);
+  });
+
+  it("handles asynchronous IMAP socket timeout errors without reusing the stale connection", async () => {
+    mailMocks.uidNext = 2;
+    mailMocks.messages = [];
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    const { ImapAttachmentClient } = await import("../../electron/main/services/mailClient");
+    const client = new ImapAttachmentClient({
+      email: "buyer@example.com",
+      authCode: "secret",
+      host: "imap.example.com",
+    });
+
+    await client.fetchExcelAttachmentBatch({});
+
+    const imapClient = mailMocks.clients[0].client;
+    expect(imapClient.on).toHaveBeenCalledWith("error", expect.any(Function));
+    const errorHandler = imapClient.on.mock.calls.find(([event]) => event === "error")?.[1] as
+      | ((error: Error) => void)
+      | undefined;
+    expect(errorHandler).toBeDefined();
+    expect(() => errorHandler?.(Object.assign(new Error("Socket timeout"), { code: "ETIMEOUT" }))).not.toThrow();
+    expect(warn).toHaveBeenCalledWith("邮箱连接异常：", "Socket timeout");
+
+    await client.fetchExcelAttachmentBatch({});
+
+    expect(mailMocks.ImapFlow).toHaveBeenCalledTimes(2);
+    warn.mockRestore();
+  });
+
+  it("retries transient IMAP download failures once on a fresh connection", async () => {
+    mailMocks.uidNext = 8;
+    mailMocks.messages = [
+      {
+        uid: 7,
+        bodyStructure: {
+          type: "multipart/mixed",
+          childNodes: [
+            {
+              part: "2",
+              type: "application/octet-stream",
+              disposition: "attachment",
+              dispositionParameters: { filename: "orders.xlsx" },
+            },
+          ],
+        },
+        envelope: { subject: "orders", date: new Date("2026-06-16T08:00:00.000Z") },
+      },
+    ];
+    mailMocks.downloads.set("7:2", Buffer.from("xlsx"));
+    let attempts = 0;
+    mailMocks.beforeDownloadMany = async () => {
+      attempts += 1;
+      if (attempts === 1) {
+        throw Object.assign(new Error("Socket timeout"), { code: "ETIMEOUT" });
+      }
+    };
+    const { ImapAttachmentClient } = await import("../../electron/main/services/mailClient");
+    const client = new ImapAttachmentClient({
+      email: "buyer@example.com",
+      authCode: "secret",
+      host: "imap.example.com",
+    });
+
+    const result = await client.fetchExcelAttachmentBatch({});
+
+    expect(result.attachments).toHaveLength(1);
+    expect(mailMocks.ImapFlow).toHaveBeenCalledTimes(2);
+    expect(mailMocks.clients[0].client.logout).toHaveBeenCalledTimes(1);
+    expect(mailMocks.clients[1].client.downloadMany).toHaveBeenCalledWith("7", ["2"], { uid: true });
   });
 
   it("starts attachment downloads from multiple messages concurrently", async () => {

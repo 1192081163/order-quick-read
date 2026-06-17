@@ -110,26 +110,32 @@ export function FilterBar({ filter, onChange }: Props) {
 
   return (
     <section className="panel filter-bar" role="region" aria-label="订单筛选">
-      <Field label="订单号" className="filter-search">
-        <Input
-          placeholder="搜索订单号"
-          value={filter.searchText}
-          onChange={(_event, data) => onChange({ ...filter, searchText: data.value })}
-        />
-      </Field>
-      <div className="date-filter-group">
-        <DateFilterPicker
-          className="date-filter-field"
-          label="发送时间"
-          value={filter.sentStartDate}
-          onChange={setSentDate}
-        />
-        <DateFilterPicker
-          className="date-filter-field"
-          label="截止时间"
-          value={filter.deadlineStartDate}
-          onChange={setDeadlineDate}
-        />
+      <div className="filter-row filter-row-primary">
+        <Field label="订单号" className="filter-search">
+          <Input
+            placeholder="搜索订单号"
+            value={filter.searchText}
+            onChange={(_event, data) => onChange({ ...filter, searchText: data.value })}
+          />
+        </Field>
+        <div className="date-filter-group">
+          <DateFilterPicker
+            className="date-filter-field"
+            label="发送时间"
+            value={filter.sentStartDate}
+            onChange={setSentDate}
+          />
+        </div>
+      </div>
+      <div className="filter-row filter-row-secondary">
+        <div className="date-filter-group">
+          <DateFilterPicker
+            className="date-filter-field"
+            label="截止时间"
+            value={filter.deadlineStartDate}
+            onChange={setDeadlineDate}
+          />
+        </div>
         <Button className="clear-date-filters" onClick={clearDateFilters}>
           清空时间
         </Button>

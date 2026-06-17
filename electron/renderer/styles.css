@@ -106,10 +106,14 @@ body {
 
 .filter-bar {
   align-items: end;
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(280px, 360px) 220px 220px 104px minmax(0, 1fr);
   gap: 10px;
   padding: 12px 14px;
+}
+
+.filter-row {
+  display: contents;
 }
 
 .filter-search {
@@ -121,9 +125,8 @@ body {
 .date-filter-group {
   align-items: end;
   display: flex;
-  flex: 0 0 auto;
-  flex-wrap: wrap;
   gap: 10px;
+  min-width: 0;
 }
 
 .date-filter-field {
@@ -140,25 +143,60 @@ body {
 
 .orders-panel {
   min-height: 260px;
-  overflow: hidden;
+  overflow: auto;
 }
 
 .orders-table {
+  min-width: 460px;
+  table-layout: fixed;
   width: 100%;
 }
 
+.orders-table tr,
 .orders-table [role="row"] {
+  align-items: center;
+  display: grid;
+  grid-template-columns: 180px 120px 120px minmax(0, 1fr);
   min-height: 38px;
 }
 
+.orders-table th,
+.orders-table td,
 .orders-table [role="columnheader"],
 .orders-table [role="cell"] {
   padding-left: 16px;
   padding-right: 16px;
 }
 
+.orders-table thead,
 .orders-table [role="rowgroup"]:first-child {
   background: #f8f8f8;
+}
+
+.orders-table td[colspan="3"] {
+  grid-column: 1 / -1;
+}
+
+.order-number-column {
+  min-width: 0;
+  width: 180px;
+}
+
+.sent-date-column {
+  white-space: nowrap;
+  width: 120px;
+}
+
+.deadline-column {
+  white-space: nowrap;
+  width: 120px;
+}
+
+.order-number-text {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .empty-orders {
@@ -220,7 +258,14 @@ body {
 }
 
 @media (max-width: 680px) {
-  .date-filter-group {
-    flex: 1 1 100%;
+  .filter-bar {
+    grid-template-columns: 1fr;
+  }
+
+  .filter-search,
+  .date-filter-field {
+    max-width: none;
+    min-width: 0;
+    width: 100%;
   }
 }

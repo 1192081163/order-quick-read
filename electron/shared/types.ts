@@ -6,12 +6,29 @@ export type OrderRow = {
   messageDate: string;
 };
 
+export type ScanMetrics = {
+  totalMs: number;
+  connectMs: number;
+  searchMs: number;
+  fetchMs: number;
+  downloadMs: number;
+  parseMs: number;
+  cacheHits: number;
+  retryCount: number;
+};
+
 export type ScanResult = {
   rows: OrderRow[];
   warnings: string[];
   scannedMessages: number;
   parsedAttachments: number;
   scanMode: "full" | "incremental";
+  metrics?: ScanMetrics;
+};
+
+export type BackgroundBackfillStatus = {
+  state: "started" | "completed" | "failed" | "skipped";
+  message: string;
 };
 
 export type AppSettings = {
@@ -44,6 +61,7 @@ export const IPC_CHANNELS = {
   loadSettings: "settings:load",
   saveSettings: "settings:save",
   scanOrders: "orders:scan",
+  backfillStatus: "orders:backfill:status",
   clearCache: "orders:cache:clear",
   checkUpdates: "updates:check",
   downloadUpdate: "updates:download",
@@ -52,14 +70,19 @@ export const IPC_CHANNELS = {
 
 export type ScanOrdersRequest = {
   fullScan: boolean;
+  includeMetrics?: boolean;
   sentStartDate?: string;
   sentEndDate?: string;
+  backgroundBackfill?: boolean;
+  backgroundSentStartDate?: string;
+  backgroundSentEndDate?: string;
 };
 
 export type RendererApi = {
   loadSettings(): Promise<AppSettings>;
   saveSettings(settings: AppSettings): Promise<void>;
   scanOrders(options: ScanOrdersRequest): Promise<ScanResult>;
+  onBackfillStatus(handler: (status: BackgroundBackfillStatus) => void): () => void;
   clearCache(): Promise<void>;
   checkUpdates(): Promise<UpdateInfo | null>;
   downloadUpdate(update: UpdateInfo): Promise<string>;

@@ -1,4 +1,4 @@
-import { Button, Field, Input, Text, Title3 } from "@fluentui/react-components";
+import { Button, Field, Input, Title3 } from "@fluentui/react-components";
 
 import type { AppSettings } from "../../shared/types";
 
@@ -15,7 +15,6 @@ export function SettingsPanel({ disabled, settings, onChange, onSave, onScanAll 
     <section className="panel settings-panel" role="region" aria-label="邮箱设置">
       <div className="panel-title">
         <Title3 as="h1">订单快读</Title3>
-        <Text size={200}>企业微信邮箱</Text>
       </div>
       <div className="settings-fields">
         <Field label="邮箱">
@@ -41,7 +40,7 @@ export function SettingsPanel({ disabled, settings, onChange, onSave, onScanAll 
           保存设置
         </Button>
         <Button appearance="primary" disabled={disabled} onClick={onScanAll}>
-          扫描全部邮件
+          同步近一个月
         </Button>
       </div>
     </section>

@@ -41,6 +41,7 @@ const EMPTY_FILTER: DateFilter = {
 };
 const AUTO_REFRESH_INTERVAL_MS = 30_000;
 const RECENT_SCAN_DAYS = 7;
+const MAX_SCAN_DAYS = 30;
 
 function hasCompleteSettings(settings: AppSettings): boolean {
   return Boolean(settings.email.trim() && settings.authCode);
@@ -58,7 +59,22 @@ function statusFromError(error: unknown): string {
 
 function scanStatus(result: ScanResult, scopeLabel = ""): string {
   const prefix = scopeLabel ? `按${scopeLabel}扫描，匹配` : "扫描到";
-  return `${prefix} ${result.scannedMessages} 封邮件，找到 ${result.parsedAttachments} 个 Excel 附件，读取 ${result.rows.length} 条订单。`;
+  return `${prefix} ${result.scannedMessages} 封邮件，找到 ${result.parsedAttachments} 个 Excel 附件，读取 ${result.rows.length} 条订单。${metricsStatus(result)}`;
+}
+
+function metricsStatus(result: ScanResult): string {
+  if (!result.metrics) {
+    return "";
+  }
+
+  const parts = [`耗时 ${(result.metrics.totalMs / 1000).toFixed(1)} 秒`];
+  if (result.metrics.cacheHits > 0) {
+    parts.push(`缓存命中 ${result.metrics.cacheHits} 个`);
+  }
+  if (result.metrics.retryCount > 0) {
+    parts.push(`重试 ${result.metrics.retryCount} 次`);
+  }
+  return `${parts.join("，")}。`;
 }
 
 function sentDateScanOptions(filter: DateFilter, fullScan: boolean): Pick<ScanOrdersRequest, "sentStartDate" | "sentEndDate"> {
@@ -78,9 +94,35 @@ function sentDateScanOptions(filter: DateFilter, fullScan: boolean): Pick<ScanOr
   return fullScan ? recentSentDateRange() : {};
 }
 
+function shouldBackgroundBackfill(filter: DateFilter, fullScan: boolean): boolean {
+  return fullScan && filter.sentPreset !== "custom";
+}
+
+function backgroundBackfillScanOptions(
+  filter: DateFilter,
+  fullScan: boolean,
+): Pick<ScanOrdersRequest, "backgroundBackfill" | "backgroundSentStartDate" | "backgroundSentEndDate"> {
+  if (!shouldBackgroundBackfill(filter, fullScan)) {
+    return {};
+  }
+
+  const range = maxSentDateRange();
+  return {
+    backgroundBackfill: true,
+    backgroundSentStartDate: range.sentStartDate,
+    backgroundSentEndDate: range.sentEndDate,
+  };
+}
+
 function recentSentDateRange(referenceDate = new Date()): Pick<ScanOrdersRequest, "sentStartDate" | "sentEndDate"> {
   const endDate = localIsoDate(referenceDate);
   const startDate = localIsoDate(addLocalDays(referenceDate, -(RECENT_SCAN_DAYS - 1)));
+  return { sentStartDate: startDate, sentEndDate: endDate };
+}
+
+function maxSentDateRange(referenceDate = new Date()): Pick<ScanOrdersRequest, "sentStartDate" | "sentEndDate"> {
+  const endDate = localIsoDate(referenceDate);
+  const startDate = localIsoDate(addLocalDays(referenceDate, -(MAX_SCAN_DAYS - 1)));
   return { sentStartDate: startDate, sentEndDate: endDate };
 }
 
@@ -187,6 +229,19 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    const api = rendererApi();
+    if (!api) {
+      return undefined;
+    }
+
+    return api.onBackfillStatus((event) => {
+      if (event.message) {
+        setStatus(event.message);
+      }
+    });
+  }, []);
+
+  useEffect(() => {
     if (editingSettings || !hasCompleteSettings(settings)) {
       return undefined;
     }
@@ -256,7 +311,12 @@ export function App() {
 
     try {
       setIsBusy(true);
-      const scanRequest = { fullScan, ...sentDateScanOptions(filter, fullScan) };
+      const scanRequest = {
+        fullScan,
+        includeMetrics: true,
+        ...sentDateScanOptions(filter, fullScan),
+        ...backgroundBackfillScanOptions(filter, fullScan),
+      };
       const scopeLabel = fullScan ? scanScopeLabel(scanRequest) : "";
       setStatus(
         fullScan

@@ -3,6 +3,12 @@ import path from "node:path";
 
 import type { OrderRow } from "../../shared/types.js";
 
+export type ParsedAttachmentCacheEntry = {
+  key: string;
+  rows: OrderRow[];
+  warnings: string[];
+};
+
 export type OrderCache = {
   email: string;
   uidvalidity: string;
@@ -11,6 +17,7 @@ export type OrderCache = {
   warnings: string[];
   scannedMessages: number;
   parsedAttachments: number;
+  parsedAttachmentCache?: ParsedAttachmentCacheEntry[];
 };
 
 const emptyCache: OrderCache = {
@@ -35,6 +42,7 @@ export async function loadOrderCache(cachePath: string): Promise<OrderCache> {
     return createEmptyCache();
   }
 
+  const parsedAttachmentCache = loadParsedAttachmentCache(raw.parsedAttachmentCache ?? raw.parsed_attachment_cache);
   return {
     email: stringValue(raw.email).trim(),
     uidvalidity: stringValue(raw.uidvalidity),
@@ -43,6 +51,7 @@ export async function loadOrderCache(cachePath: string): Promise<OrderCache> {
     warnings: Array.isArray(raw.warnings) ? raw.warnings.map((warning) => String(warning)) : [],
     scannedMessages: numberValue(raw.scannedMessages ?? raw.scanned_messages),
     parsedAttachments: numberValue(raw.parsedAttachments ?? raw.parsed_attachments),
+    ...(parsedAttachmentCache.length > 0 ? { parsedAttachmentCache } : {}),
   };
 }
 
@@ -59,6 +68,9 @@ export async function saveOrderCache(cachePath: string, cache: OrderCache): Prom
         warnings: cache.warnings,
         scannedMessages: cache.scannedMessages,
         parsedAttachments: cache.parsedAttachments,
+        ...((cache.parsedAttachmentCache?.length ?? 0) > 0
+          ? { parsedAttachmentCache: cache.parsedAttachmentCache }
+          : {}),
       },
       null,
       2,
@@ -85,12 +97,49 @@ export function mergeOrderRows(existingRows: OrderRow[], newRows: OrderRow[]): O
   return orderNumbers.map((orderNumber) => merged.get(orderNumber)).filter((row): row is OrderRow => row !== undefined);
 }
 
+export function mergeParsedAttachmentCache(
+  existingEntries: ParsedAttachmentCacheEntry[],
+  newEntries: ParsedAttachmentCacheEntry[],
+): ParsedAttachmentCacheEntry[] {
+  const merged = new Map<string, ParsedAttachmentCacheEntry>();
+  for (const entry of [...existingEntries, ...newEntries]) {
+    merged.set(entry.key, entry);
+  }
+  return [...merged.values()];
+}
+
 function createEmptyCache(): OrderCache {
   return {
     ...emptyCache,
     rows: [],
     warnings: [],
   };
+}
+
+function loadParsedAttachmentCache(rawEntries: unknown): ParsedAttachmentCacheEntry[] {
+  if (!Array.isArray(rawEntries)) {
+    return [];
+  }
+
+  const entries: ParsedAttachmentCacheEntry[] = [];
+  for (const rawEntry of rawEntries) {
+    if (!isRecord(rawEntry)) {
+      continue;
+    }
+
+    const key = stringValue(rawEntry.key).trim();
+    if (!key) {
+      continue;
+    }
+
+    entries.push({
+      key,
+      rows: loadRows(rawEntry.rows),
+      warnings: Array.isArray(rawEntry.warnings) ? rawEntry.warnings.map((warning) => String(warning)) : [],
+    });
+  }
+
+  return entries;
 }
 
 function loadRows(rawRows: unknown): OrderRow[] {

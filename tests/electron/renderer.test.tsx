@@ -24,11 +24,19 @@ const api: RendererApi = {
   checkUpdates: vi.fn(),
   downloadUpdate: vi.fn(),
   installUpdate: vi.fn(),
+  onBackfillStatus: vi.fn(),
 };
 const rendererStyles = readFileSync(resolve(__dirname, "../../electron/renderer/styles.css"), "utf-8");
+let backfillStatusHandler: Parameters<RendererApi["onBackfillStatus"]>[0] | null = null;
+
+async function clickMoreMenuItem(name: string) {
+  fireEvent.click(await screen.findByRole("button", { name: "更多操作" }));
+  fireEvent.click(await screen.findByRole("menuitem", { name }));
+}
 
 beforeEach(() => {
   vi.resetAllMocks();
+  backfillStatusHandler = null;
   vi.mocked(api.loadSettings).mockResolvedValue({ email: "", authCode: "" });
   vi.mocked(api.saveSettings).mockResolvedValue();
   vi.mocked(api.scanOrders).mockResolvedValue(emptyScanResult);
@@ -36,6 +44,12 @@ beforeEach(() => {
   vi.mocked(api.checkUpdates).mockResolvedValue(null);
   vi.mocked(api.downloadUpdate).mockResolvedValue("");
   vi.mocked(api.installUpdate).mockResolvedValue();
+  vi.mocked(api.onBackfillStatus).mockImplementation((handler) => {
+    backfillStatusHandler = handler;
+    return () => {
+      backfillStatusHandler = null;
+    };
+  });
   window.orderQuickRead = api;
 });
 
@@ -51,6 +65,13 @@ describe("Electron renderer", () => {
 
     expect(await screen.findByText("saved@example.com")).toBeInTheDocument();
     expect(screen.queryByLabelText("邮箱")).not.toBeInTheDocument();
+  });
+
+  it("does not show the enterprise mailbox subtitle in settings", async () => {
+    render(<App />);
+
+    expect(await screen.findByRole("region", { name: "邮箱设置" })).toBeInTheDocument();
+    expect(screen.queryByText("企业微信邮箱")).not.toBeInTheDocument();
   });
 
   it("renders the order workspace with named Fluent layout regions", async () => {
@@ -69,6 +90,35 @@ describe("Electron renderer", () => {
     expect(rendererStyles).toMatch(/\.filter-search\s*{[^}]*max-width:\s*400px;/s);
     expect(rendererStyles).toMatch(/\.date-filter-field\s*{[^}]*flex:\s*0 0 220px;/s);
     expect(rendererStyles).toMatch(/\.date-filter-field\s*{[^}]*min-width:\s*220px;/s);
+    expect(rendererStyles).toMatch(
+      /\.filter-bar\s*{[^}]*grid-template-columns:\s*minmax\(280px,\s*360px\)\s+220px\s+220px\s+104px\s+minmax\(0,\s*1fr\);/s,
+    );
+    expect(rendererStyles).toMatch(/\.filter-row\s*{[^}]*display:\s*contents;/s);
+    expect(rendererStyles).toMatch(
+      /\.orders-table\s+tr,\s*\.orders-table\s*\[role="row"\]\s*{[^}]*grid-template-columns:\s*180px\s+120px\s+120px\s+minmax\(0,\s*1fr\);/s,
+    );
+    expect(rendererStyles).toMatch(/\.order-number-column\s*{[^}]*width:\s*180px;/s);
+    expect(rendererStyles).toMatch(/\.sent-date-column\s*{[^}]*width:\s*120px;/s);
+    expect(rendererStyles).toMatch(/\.deadline-column\s*{[^}]*width:\s*120px;/s);
+  });
+
+  it("groups low frequency toolbar actions behind a menu", async () => {
+    vi.mocked(api.loadSettings).mockResolvedValue({ email: "saved@example.com", authCode: "secret" });
+
+    render(<App />);
+    await screen.findByText("saved@example.com");
+
+    expect(screen.getByRole("button", { name: "刷新" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "同步近一个月" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "清空缓存" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "检查更新" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "修改邮箱设置" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "更多操作" }));
+
+    expect(await screen.findByRole("menuitem", { name: "清空缓存" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "检查更新" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "修改邮箱设置" })).toBeInTheDocument();
   });
 
   it("shows running status as a transient popup instead of a persistent bar", () => {
@@ -94,18 +144,66 @@ describe("Electron renderer", () => {
 
     await screen.findByText("saved@example.com");
 
-    fireEvent.click(screen.getByRole("button", { name: "扫描全部邮件" }));
+    fireEvent.click(screen.getByRole("button", { name: "同步近一个月" }));
     await waitFor(() =>
       expect(api.scanOrders).toHaveBeenCalledWith({
         fullScan: true,
+        includeMetrics: true,
         sentStartDate: "2026-06-11",
         sentEndDate: "2026-06-17",
+        backgroundBackfill: true,
+        backgroundSentStartDate: "2026-05-19",
+        backgroundSentEndDate: "2026-06-17",
       }),
     );
     expect(await screen.findByText("按近一周扫描，匹配 0 封邮件，找到 0 个 Excel 附件，读取 0 条订单。")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "刷新" }));
-    await waitFor(() => expect(api.scanOrders).toHaveBeenLastCalledWith({ fullScan: false }));
+    await waitFor(() => expect(api.scanOrders).toHaveBeenLastCalledWith({ fullScan: false, includeMetrics: true }));
+  });
+
+  it("shows scan timing and cache hit details when metrics are returned", async () => {
+    vi.mocked(api.loadSettings).mockResolvedValue({ email: "saved@example.com", authCode: "secret" });
+    vi.mocked(api.scanOrders).mockResolvedValue({
+      rows: [],
+      warnings: [],
+      scannedMessages: 1,
+      parsedAttachments: 1,
+      scanMode: "full",
+      metrics: {
+        totalMs: 1234,
+        connectMs: 100,
+        searchMs: 200,
+        fetchMs: 300,
+        downloadMs: 400,
+        parseMs: 50,
+        cacheHits: 2,
+        retryCount: 1,
+      },
+    });
+
+    render(<App />);
+    await screen.findByText("saved@example.com");
+    fireEvent.click(screen.getByRole("button", { name: "同步近一个月" }));
+
+    expect(
+      await screen.findByText(
+        "按近一周扫描，匹配 1 封邮件，找到 1 个 Excel 附件，读取 0 条订单。耗时 1.2 秒，缓存命中 2 个，重试 1 次。",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("shows background history sync status events", async () => {
+    vi.mocked(api.loadSettings).mockResolvedValue({ email: "saved@example.com", authCode: "secret" });
+
+    render(<App />);
+    await screen.findByText("saved@example.com");
+
+    act(() => {
+      backfillStatusHandler?.({ state: "completed", message: "历史邮件同步完成，缓存已更新。" });
+    });
+
+    expect(await screen.findByText("历史邮件同步完成，缓存已更新。")).toBeInTheDocument();
   });
 
   it("filters rendered rows by order number, sent date, and deadline date", async () => {
@@ -143,7 +241,7 @@ describe("Electron renderer", () => {
     render(<App />);
     await screen.findByText("saved@example.com");
 
-    fireEvent.click(screen.getByRole("button", { name: "扫描全部邮件" }));
+    fireEvent.click(screen.getByRole("button", { name: "同步近一个月" }));
     await screen.findByText("TODAY-SENT-TODAY-DUE");
 
     fireEvent.change(screen.getByLabelText("发送时间"), { target: { value: "2026-06-16" } });
@@ -164,11 +262,12 @@ describe("Electron renderer", () => {
     await screen.findByText("saved@example.com");
     fireEvent.change(screen.getByLabelText("发送时间"), { target: { value: "2026-06-18" } });
     fireEvent.blur(screen.getByLabelText("发送时间"));
-    fireEvent.click(screen.getByRole("button", { name: "扫描全部邮件" }));
+    fireEvent.click(screen.getByRole("button", { name: "同步近一个月" }));
 
     await waitFor(() =>
       expect(api.scanOrders).toHaveBeenCalledWith({
         fullScan: true,
+        includeMetrics: true,
         sentStartDate: "2026-06-18",
         sentEndDate: "2026-06-18",
       }),
@@ -195,7 +294,7 @@ describe("Electron renderer", () => {
 
     render(<App />);
     await screen.findByText("saved@example.com");
-    fireEvent.click(screen.getByRole("button", { name: "扫描全部邮件" }));
+    fireEvent.click(screen.getByRole("button", { name: "同步近一个月" }));
 
     expect(await screen.findByText("PO-SENT")).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "发送时间" })).toBeInTheDocument();
@@ -207,7 +306,7 @@ describe("Electron renderer", () => {
 
     render(<App />);
     await screen.findByText("saved@example.com");
-    fireEvent.click(screen.getByRole("button", { name: "清空缓存" }));
+    await clickMoreMenuItem("清空缓存");
 
     await waitFor(() => expect(api.clearCache).toHaveBeenCalledTimes(1));
     expect(await screen.findByText("已清空本地扫描缓存。")).toBeInTheDocument();
@@ -236,7 +335,7 @@ describe("Electron renderer", () => {
 
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "修改邮箱设置" }));
+    await clickMoreMenuItem("修改邮箱设置");
     fireEvent.change(screen.getByLabelText("邮箱"), { target: { value: "edited@example.com" } });
     fireEvent.click(screen.getByRole("button", { name: "保存设置" }));
 
@@ -278,7 +377,7 @@ describe("Electron renderer", () => {
       await Promise.resolve();
     });
 
-    expect(api.scanOrders).toHaveBeenCalledWith({ fullScan: false });
+    expect(api.scanOrders).toHaveBeenCalledWith({ fullScan: false, includeMetrics: true });
     expect(screen.getByText("扫描到 0 封邮件，找到 0 个 Excel 附件，读取 0 条订单。")).toBeInTheDocument();
   });
 
@@ -311,7 +410,7 @@ describe("Electron renderer", () => {
 
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "检查更新" }));
+    await clickMoreMenuItem("检查更新");
     expect(await screen.findByRole("dialog", { name: "发现新版本" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "下载新版" }));

@@ -13,9 +13,9 @@ export function OrderTable({ rows }: Props) {
       <Table aria-label="订单列表" className="orders-table">
         <TableHeader>
           <TableRow>
-            <TableHeaderCell>订单号</TableHeaderCell>
-            <TableHeaderCell>发送时间</TableHeaderCell>
-            <TableHeaderCell>截至时间</TableHeaderCell>
+            <TableHeaderCell className="order-number-column">订单号</TableHeaderCell>
+            <TableHeaderCell className="sent-date-column">发送时间</TableHeaderCell>
+            <TableHeaderCell className="deadline-column">截至时间</TableHeaderCell>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -28,11 +28,13 @@ export function OrderTable({ rows }: Props) {
         ) : (
           rows.map((row) => (
             <TableRow key={row.orderNumber}>
-              <TableCell>
-                <Text weight="semibold">{row.orderNumber}</Text>
+              <TableCell className="order-number-column">
+                <Text className="order-number-text" weight="semibold">
+                  {row.orderNumber}
+                </Text>
               </TableCell>
-              <TableCell>{sentDateFromMessageDate(row.messageDate) ?? "-"}</TableCell>
-              <TableCell>{row.deadline}</TableCell>
+              <TableCell className="sent-date-column">{sentDateFromMessageDate(row.messageDate) ?? "-"}</TableCell>
+              <TableCell className="deadline-column">{row.deadline}</TableCell>
             </TableRow>
           ))
         )}
