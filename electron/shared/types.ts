@@ -44,6 +44,7 @@ export const IPC_CHANNELS = {
   loadSettings: "settings:load",
   saveSettings: "settings:save",
   scanOrders: "orders:scan",
+  clearCache: "orders:cache:clear",
   checkUpdates: "updates:check",
   downloadUpdate: "updates:download",
   installUpdate: "updates:install",
@@ -51,12 +52,15 @@ export const IPC_CHANNELS = {
 
 export type ScanOrdersRequest = {
   fullScan: boolean;
+  sentStartDate?: string;
+  sentEndDate?: string;
 };
 
 export type RendererApi = {
   loadSettings(): Promise<AppSettings>;
   saveSettings(settings: AppSettings): Promise<void>;
   scanOrders(options: ScanOrdersRequest): Promise<ScanResult>;
+  clearCache(): Promise<void>;
   checkUpdates(): Promise<UpdateInfo | null>;
   downloadUpdate(update: UpdateInfo): Promise<string>;
   installUpdate(path: string): Promise<void>;

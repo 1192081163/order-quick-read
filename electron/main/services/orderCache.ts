@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import type { OrderRow } from "../../shared/types.js";
@@ -65,6 +65,10 @@ export async function saveOrderCache(cachePath: string, cache: OrderCache): Prom
     ),
     "utf-8",
   );
+}
+
+export async function clearOrderCache(cachePath: string): Promise<void> {
+  await rm(cachePath, { force: true });
 }
 
 export function mergeOrderRows(existingRows: OrderRow[], newRows: OrderRow[]): OrderRow[] {

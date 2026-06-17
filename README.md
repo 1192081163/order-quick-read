@@ -48,12 +48,6 @@ npm run electron:typecheck
 npm run electron:build:main
 ```
 
-旧版 Python 测试仍可运行：
-
-```bash
-python -m pytest -q
-```
-
 ## 本地打包
 
 ```bash
@@ -72,12 +66,7 @@ dist-electron-packages/
 
 ```text
 OrderQuickReadSetup.exe
-OrderQuickRead-macos-x64.dmg
-OrderQuickRead-macos-arm64.dmg
 ```
 
 Windows 用户下载 `OrderQuickReadSetup.exe`，双击安装。
-
-macOS Intel 下载 `OrderQuickRead-macos-x64.dmg`；Apple Silicon 下载 `OrderQuickRead-macos-arm64.dmg`。
-
-当前内部版本未做 Apple Developer ID 签名和 notarization。macOS 首次打开如果提示无法验证，需要右键 `Order Quick Read.app`，选择 `打开` 后确认。
+当前 GitHub Actions 只发布 Windows 安装包。

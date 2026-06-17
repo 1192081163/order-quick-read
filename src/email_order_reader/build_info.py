@@ -1,1 +1,0 @@
-CURRENT_RELEASE_TAG = "dev"

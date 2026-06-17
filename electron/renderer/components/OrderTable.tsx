@@ -1,5 +1,6 @@
 import { Table, TableBody, TableCell, TableHeader, TableHeaderCell, TableRow, Text } from "@fluentui/react-components";
 
+import { sentDateFromMessageDate } from "../../shared/date";
 import type { OrderRow } from "../../shared/types";
 
 type Props = {
@@ -13,13 +14,14 @@ export function OrderTable({ rows }: Props) {
         <TableHeader>
           <TableRow>
             <TableHeaderCell>订单号</TableHeaderCell>
+            <TableHeaderCell>发送时间</TableHeaderCell>
             <TableHeaderCell>截至时间</TableHeaderCell>
           </TableRow>
         </TableHeader>
         <TableBody>
         {rows.length === 0 ? (
           <TableRow>
-            <TableCell colSpan={2}>
+            <TableCell colSpan={3}>
               <Text className="empty-orders">暂无订单</Text>
             </TableCell>
           </TableRow>
@@ -29,6 +31,7 @@ export function OrderTable({ rows }: Props) {
               <TableCell>
                 <Text weight="semibold">{row.orderNumber}</Text>
               </TableCell>
+              <TableCell>{sentDateFromMessageDate(row.messageDate) ?? "-"}</TableCell>
               <TableCell>{row.deadline}</TableCell>
             </TableRow>
           ))

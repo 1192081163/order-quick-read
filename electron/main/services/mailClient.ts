@@ -1,5 +1,7 @@
 import { ImapFlow, type ImapFlowOptions, type MessageStructureObject } from "imapflow";
 
+import { sentDateFromMessageDate } from "../../shared/date.js";
+
 const SUPPORTED_EXCEL_EXTENSION = /\.(xlsx|xlsm|xls)$/i;
 const MAX_ATTACHMENT_DOWNLOADS = 3;
 
@@ -30,6 +32,8 @@ export type AttachmentBatch = {
 
 export type AttachmentFetchOptions = {
   sinceUid?: number;
+  sentStartDate?: string;
+  sentEndDate?: string;
 };
 
 export type AttachmentClient = {
@@ -54,6 +58,11 @@ type AttachmentDownloadJob = {
   messageDate: string;
 };
 
+type SentDateRange = {
+  startDate?: string;
+  endDate?: string;
+};
+
 export class ImapAttachmentClient implements AttachmentClient {
   private client: ImapFlow | null = null;
   private connecting: Promise<ImapFlow> | null = null;
@@ -67,6 +76,7 @@ export class ImapAttachmentClient implements AttachmentClient {
     let scannedMessages = 0;
     let latestUid = options.sinceUid ?? 0;
     let uidvalidity = "";
+    const sentDateRange = normalizedSentDateRange(options);
 
     try {
       const lock = await client.getMailboxLock("INBOX");
@@ -77,25 +87,32 @@ export class ImapAttachmentClient implements AttachmentClient {
           return { attachments, scannedMessages, latestUid, uidvalidity };
         }
 
-        const fetchRange = createFetchRange(options.sinceUid);
-        for await (const message of client.fetch(
-          fetchRange,
-          { uid: true, envelope: true, internalDate: true, bodyStructure: true, headers: ["date"] },
+          const fetchRange = await createFetchRange(client, options.sinceUid, sentDateRange);
+          if (Array.isArray(fetchRange) && fetchRange.length === 0) {
+            return { attachments, scannedMessages, latestUid, uidvalidity };
+          }
+          for await (const message of client.fetch(
+            fetchRange,
+            { uid: true, envelope: true, internalDate: true, bodyStructure: true, headers: ["date"] },
           { uid: true },
         )) {
           if (options.sinceUid !== undefined && message.uid <= options.sinceUid) {
             continue;
           }
 
-          scannedMessages += 1;
           latestUid = Math.max(latestUid, message.uid);
+          const messageSubject = message.envelope?.subject ?? "";
+          const messageDate = messageDateFromHeaders(message.headers, message.envelope?.date ?? message.internalDate);
+          if (!messageMatchesSentDateRange(messageDate, sentDateRange)) {
+            continue;
+          }
+
+          scannedMessages += 1;
           const excelParts = collectExcelBodyParts(message.bodyStructure);
           if (excelParts.length === 0) {
             continue;
           }
 
-          const messageSubject = message.envelope?.subject ?? "";
-          const messageDate = messageDateFromHeaders(message.headers, message.envelope?.date ?? message.internalDate);
           downloadJobs.push({
             uid: message.uid,
             excelParts,
@@ -161,6 +178,7 @@ export class ImapAttachmentClient implements AttachmentClient {
       host: this.config.host ?? ENTERPRISE_WECHAT_IMAP_HOST,
       port: this.config.port ?? 993,
       secure: this.config.secure ?? true,
+      logger: false,
       auth: {
         user: this.config.email,
         pass: this.config.authCode,
@@ -169,11 +187,70 @@ export class ImapAttachmentClient implements AttachmentClient {
   }
 }
 
-function createFetchRange(sinceUid: number | undefined): string {
+async function createFetchRange(
+  client: ImapFlow,
+  sinceUid: number | undefined,
+  sentDateRange: SentDateRange | null,
+): Promise<string | number[]> {
+  if (sentDateRange) {
+    const matchedUids = await client.search(sentDateSearchQuery(sentDateRange), { uid: true });
+    if (!matchedUids) {
+      return [];
+    }
+    return matchedUids.filter((uid) => sinceUid === undefined || uid > sinceUid);
+  }
+
   if (sinceUid === undefined || sinceUid <= 0) {
     return "1:*";
   }
   return `${sinceUid + 1}:*`;
+}
+
+function sentDateSearchQuery(range: SentDateRange): { sentSince: string; sentBefore: string } {
+  return {
+    sentSince: range.startDate ?? range.endDate ?? "",
+    sentBefore: addIsoDays(range.endDate ?? range.startDate ?? "", 1),
+  };
+}
+
+function addIsoDays(value: string, days: number): string {
+  const [yearText, monthText, dayText] = value.split("-");
+  const date = new Date(Date.UTC(Number(yearText), Number(monthText) - 1, Number(dayText)));
+  date.setUTCDate(date.getUTCDate() + days);
+  return [
+    String(date.getUTCFullYear()).padStart(4, "0"),
+    String(date.getUTCMonth() + 1).padStart(2, "0"),
+    String(date.getUTCDate()).padStart(2, "0"),
+  ].join("-");
+}
+
+function normalizedSentDateRange(options: AttachmentFetchOptions): SentDateRange | null {
+  if (!options.sentStartDate && !options.sentEndDate) {
+    return null;
+  }
+
+  return {
+    startDate: options.sentStartDate || options.sentEndDate,
+    endDate: options.sentEndDate || options.sentStartDate,
+  };
+}
+
+function messageMatchesSentDateRange(messageDate: string, range: SentDateRange | null): boolean {
+  if (!range) {
+    return true;
+  }
+
+  const sentDate = sentDateFromMessageDate(messageDate);
+  if (!sentDate) {
+    return false;
+  }
+  if (range.startDate && sentDate < range.startDate) {
+    return false;
+  }
+  if (range.endDate && sentDate > range.endDate) {
+    return false;
+  }
+  return true;
 }
 
 function isNoNewUidRange(sinceUid: number | undefined, uidNext: number | undefined): boolean {

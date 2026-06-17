@@ -14,7 +14,15 @@ import {
 
 import { filterOrderRows } from "../shared/filtering";
 import { sortOrderRows } from "../shared/sorting";
-import type { AppSettings, DateFilter, OrderRow, RendererApi, ScanResult, UpdateInfo } from "../shared/types";
+import type {
+  AppSettings,
+  DateFilter,
+  OrderRow,
+  RendererApi,
+  ScanOrdersRequest,
+  ScanResult,
+  UpdateInfo,
+} from "../shared/types";
 import { FilterBar } from "./components/FilterBar";
 import { OrderTable } from "./components/OrderTable";
 import { SettingsPanel } from "./components/SettingsPanel";
@@ -32,6 +40,7 @@ const EMPTY_FILTER: DateFilter = {
   deadlineEndDate: "",
 };
 const AUTO_REFRESH_INTERVAL_MS = 30_000;
+const RECENT_SCAN_DAYS = 7;
 
 function hasCompleteSettings(settings: AppSettings): boolean {
   return Boolean(settings.email.trim() && settings.authCode);
@@ -47,8 +56,60 @@ function statusFromError(error: unknown): string {
   return "操作失败。";
 }
 
-function scanStatus(result: ScanResult): string {
-  return `扫描到 ${result.scannedMessages} 封邮件，找到 ${result.parsedAttachments} 个 Excel 附件，读取 ${result.rows.length} 条订单。`;
+function scanStatus(result: ScanResult, scopeLabel = ""): string {
+  const prefix = scopeLabel ? `按${scopeLabel}扫描，匹配` : "扫描到";
+  return `${prefix} ${result.scannedMessages} 封邮件，找到 ${result.parsedAttachments} 个 Excel 附件，读取 ${result.rows.length} 条订单。`;
+}
+
+function sentDateScanOptions(filter: DateFilter, fullScan: boolean): Pick<ScanOrdersRequest, "sentStartDate" | "sentEndDate"> {
+  if (filter.sentPreset === "custom") {
+    const sentStartDate = filter.sentStartDate.trim();
+    const sentEndDate = filter.sentEndDate.trim();
+    if (!sentStartDate && !sentEndDate) {
+      return {};
+    }
+
+    return {
+      sentStartDate: sentStartDate || sentEndDate,
+      sentEndDate: sentEndDate || sentStartDate,
+    };
+  }
+
+  return fullScan ? recentSentDateRange() : {};
+}
+
+function recentSentDateRange(referenceDate = new Date()): Pick<ScanOrdersRequest, "sentStartDate" | "sentEndDate"> {
+  const endDate = localIsoDate(referenceDate);
+  const startDate = localIsoDate(addLocalDays(referenceDate, -(RECENT_SCAN_DAYS - 1)));
+  return { sentStartDate: startDate, sentEndDate: endDate };
+}
+
+function scanScopeLabel(options: Pick<ScanOrdersRequest, "sentStartDate" | "sentEndDate">): string {
+  if (!options.sentStartDate && !options.sentEndDate) {
+    return "";
+  }
+  const recentRange = recentSentDateRange();
+  if (options.sentStartDate === recentRange.sentStartDate && options.sentEndDate === recentRange.sentEndDate) {
+    return "近一周";
+  }
+  if (options.sentStartDate === options.sentEndDate) {
+    return `发送时间 ${options.sentStartDate}`;
+  }
+  return `发送时间 ${options.sentStartDate} 至 ${options.sentEndDate}`;
+}
+
+function addLocalDays(date: Date, days: number): Date {
+  const nextDate = new Date(date);
+  nextDate.setDate(nextDate.getDate() + days);
+  return nextDate;
+}
+
+function localIsoDate(date: Date): string {
+  return [
+    String(date.getFullYear()).padStart(4, "0"),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+  ].join("-");
 }
 
 function rendererApi(): RendererApi | null {
@@ -137,7 +198,7 @@ export function App() {
     }, AUTO_REFRESH_INTERVAL_MS);
 
     return () => window.clearInterval(intervalId);
-  }, [editingSettings, isBusy, settings]);
+  }, [editingSettings, filter, isBusy, settings]);
 
   const displayRows = useMemo(() => filterOrderRows(sortOrderRows(rows), filter), [rows, filter]);
 
@@ -195,16 +256,44 @@ export function App() {
 
     try {
       setIsBusy(true);
-      setStatus(fullScan ? "正在扫描全部邮件..." : options.auto ? "自动刷新新邮件..." : "正在刷新新邮件...");
+      const scanRequest = { fullScan, ...sentDateScanOptions(filter, fullScan) };
+      const scopeLabel = fullScan ? scanScopeLabel(scanRequest) : "";
+      setStatus(
+        fullScan
+          ? `正在扫描${scopeLabel || "全部"}邮件...`
+          : options.auto
+            ? "自动刷新新邮件..."
+            : "正在刷新新邮件...",
+      );
       const api = rendererApi();
       if (!api) {
         setStatus("桌面接口尚未连接。请在 Electron 应用中打开。");
         return;
       }
 
-      const result = await api.scanOrders({ fullScan });
+      const result = await api.scanOrders(scanRequest);
       setRows(result.rows);
-      setStatus(scanStatus(result));
+      setStatus(scanStatus(result, scopeLabel));
+    } catch (error) {
+      setStatus(statusFromError(error));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function clearCache() {
+    try {
+      setIsBusy(true);
+      setStatus("正在清空本地扫描缓存...");
+      const api = rendererApi();
+      if (!api) {
+        setStatus("桌面接口尚未连接。请在 Electron 应用中打开。");
+        return;
+      }
+
+      await api.clearCache();
+      setRows([]);
+      setStatus("已清空本地扫描缓存。");
     } catch (error) {
       setStatus(statusFromError(error));
     } finally {
@@ -276,6 +365,7 @@ export function App() {
               email={settings.email}
               onRefresh={() => void scan(false)}
               onScanAll={() => void scan(true)}
+              onClearCache={() => void clearCache()}
               onCheckUpdate={() => void checkUpdate()}
               onEditSettings={() => setEditingSettings(true)}
             />

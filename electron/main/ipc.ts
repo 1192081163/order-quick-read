@@ -11,7 +11,7 @@ import {
 import { ImapAttachmentClient } from "./services/mailClient.js";
 import { MailboxClientCache } from "./services/mailClientCache.js";
 import { countOrderChanges, notifyOrderChanges } from "./services/notifier.js";
-import { loadOrderCache } from "./services/orderCache.js";
+import { clearOrderCache, loadOrderCache } from "./services/orderCache.js";
 import { scanOrders } from "./services/orderScanner.js";
 import { loadSettings, saveSettings } from "./services/settingsStore.js";
 import { checkForElectronUpdate, downloadUpdateAsset } from "./services/updater.js";
@@ -45,6 +45,10 @@ export function registerIpcHandlers(): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.scanOrders, async (_event, options: ScanOrdersRequest) => scanStoredMailbox(options));
+
+  ipcMain.handle(IPC_CHANNELS.clearCache, async () => {
+    await clearOrderCache(appDataPath("order_cache.json"));
+  });
 
   ipcMain.handle(IPC_CHANNELS.checkUpdates, async (): Promise<UpdateInfo | null> => checkForElectronUpdate());
 
@@ -85,6 +89,8 @@ async function scanStoredMailbox(options: ScanOrdersRequest): Promise<ScanResult
   const result = await scanOrders({
     client,
     fullScan: options.fullScan,
+    sentStartDate: options.sentStartDate,
+    sentEndDate: options.sentEndDate,
     cachePath,
     accountEmail: settings.email,
   });

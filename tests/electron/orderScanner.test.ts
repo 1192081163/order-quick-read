@@ -31,6 +31,7 @@ const mailMocks = vi.hoisted(() => {
   type MockClient = {
     connect: ReturnType<typeof vi.fn>;
     getMailboxLock: ReturnType<typeof vi.fn>;
+    search: ReturnType<typeof vi.fn>;
     fetch: ReturnType<typeof vi.fn>;
     downloadMany: ReturnType<typeof vi.fn>;
     logout: ReturnType<typeof vi.fn>;
@@ -40,6 +41,7 @@ const mailMocks = vi.hoisted(() => {
   const state = {
     clients: [] as Array<{ options: unknown; client: MockClient; release: ReturnType<typeof vi.fn> }>,
     messages: [] as MockImapMessage[],
+    searchResults: null as number[] | false | null,
     uidValidity: 123n,
     uidNext: 10,
     connectError: null as Error | null,
@@ -55,6 +57,7 @@ const mailMocks = vi.hoisted(() => {
           }
         }),
         getMailboxLock: vi.fn(async () => ({ release })),
+        search: vi.fn(async () => state.searchResults ?? state.messages.map((message) => message.uid)),
         fetch: vi.fn(() => makeMessageIterator(state.messages)),
         downloadMany: vi.fn(async (range: string, parts: string[]) => {
           await state.beforeDownloadMany?.(range, parts);
@@ -93,6 +96,7 @@ beforeEach(async () => {
   tempDir = await mkdtemp(path.join(os.tmpdir(), "order-scanner-"));
   mailMocks.clients = [];
   mailMocks.messages = [];
+  mailMocks.searchResults = null;
   mailMocks.uidValidity = 123n;
   mailMocks.uidNext = 10;
   mailMocks.connectError = null;
@@ -174,6 +178,52 @@ describe("Electron order scanner", () => {
       scannedMessages: 1,
       parsedAttachments: 1,
     });
+  });
+
+  it("passes sent-date ranges to full scans without replacing the full cache", async () => {
+    const cachePath = path.join(tempDir, "order-cache.json");
+    const cachedOrder = row("PO-CACHED", "2026-06-20", "cached.xlsx");
+    const existingCache = {
+      email: "buyer@example.com",
+      uidvalidity: "abc",
+      lastUid: 30,
+      rows: [cachedOrder],
+      warnings: ["cached warning"],
+      scannedMessages: 30,
+      parsedAttachments: 1,
+    };
+    await writeFile(cachePath, JSON.stringify(existingCache), "utf-8");
+    const client = {
+      fetchExcelAttachmentBatch: vi.fn(async () => ({
+        attachments: [attachment("orders-18.xlsx", 18)],
+        scannedMessages: 1,
+        latestUid: 18,
+        uidvalidity: "abc",
+      })),
+    };
+    const parseAttachment = vi.fn(() => ({
+      filename: "orders-18.xlsx",
+      rows: [row("PO-18", "2026-06-21", "orders-18.xlsx")],
+      warnings: [],
+    }));
+
+    const result = await scanOrders({
+      client,
+      parseAttachment,
+      fullScan: true,
+      cachePath,
+      accountEmail: "buyer@example.com",
+      sentStartDate: "2026-06-18",
+      sentEndDate: "2026-06-18",
+    });
+
+    expect(client.fetchExcelAttachmentBatch).toHaveBeenCalledWith({
+      sinceUid: undefined,
+      sentStartDate: "2026-06-18",
+      sentEndDate: "2026-06-18",
+    });
+    expect(result.rows.map((item) => item.orderNumber)).toEqual(["PO-18"]);
+    await expect(readFile(cachePath, "utf-8").then(JSON.parse)).resolves.toMatchObject(existingCache);
   });
 
   it("uses cache lastUid for incremental scans and accumulates merged cache metadata", async () => {
@@ -499,6 +549,83 @@ describe("IMAP attachment client", () => {
       ],
       scannedMessages: 2,
       latestUid: 9,
+      uidvalidity: "123",
+    });
+  });
+
+  it("skips Excel attachments outside the sent date range before downloading", async () => {
+    mailMocks.messages = [
+      {
+        uid: 7,
+        headers: Buffer.from("Date: Mon, 01 Jun 2026 09:00:00 +0800\r\n"),
+        bodyStructure: {
+          type: "multipart/mixed",
+          childNodes: [
+            {
+              part: "2",
+              type: "application/octet-stream",
+              disposition: "attachment",
+              dispositionParameters: { filename: "june-01.xlsx" },
+            },
+          ],
+        },
+        envelope: { subject: "old orders", date: new Date("2026-06-01T01:00:00.000Z") },
+      },
+      {
+        uid: 8,
+        headers: Buffer.from("Date: Thu, 18 Jun 2026 09:00:00 +0800\r\n"),
+        bodyStructure: {
+          type: "multipart/mixed",
+          childNodes: [
+            {
+              part: "2",
+              type: "application/octet-stream",
+              disposition: "attachment",
+              dispositionParameters: { filename: "june-18.xlsx" },
+            },
+          ],
+        },
+        envelope: { subject: "selected orders", date: new Date("2026-06-18T01:00:00.000Z") },
+      },
+    ];
+    mailMocks.searchResults = [8];
+    mailMocks.downloads.set("7:2", Buffer.from("old"));
+    mailMocks.downloads.set("8:2", Buffer.from("selected"));
+    const { ImapAttachmentClient } = await import("../../electron/main/services/mailClient");
+    const client = new ImapAttachmentClient({
+      email: "buyer@example.com",
+      authCode: "secret",
+      host: "imap.example.com",
+    });
+
+    const result = await client.fetchExcelAttachmentBatch({
+      sentStartDate: "2026-06-18",
+      sentEndDate: "2026-06-18",
+    });
+
+    expect(mailMocks.clients[0].client.search).toHaveBeenCalledWith(
+      { sentSince: "2026-06-18", sentBefore: "2026-06-19" },
+      { uid: true },
+    );
+    expect(mailMocks.clients[0].client.fetch).toHaveBeenCalledWith(
+      [8],
+      { uid: true, envelope: true, internalDate: true, bodyStructure: true, headers: ["date"] },
+      { uid: true },
+    );
+    expect(mailMocks.clients[0].client.downloadMany).not.toHaveBeenCalledWith("7", ["2"], { uid: true });
+    expect(mailMocks.clients[0].client.downloadMany).toHaveBeenCalledWith("8", ["2"], { uid: true });
+    expect(result).toEqual({
+      attachments: [
+        {
+          filename: "june-18.xlsx",
+          content: Buffer.from("selected"),
+          messageSubject: "selected orders",
+          messageDate: "2026-06-18T09:00:00+08:00",
+          messageUid: 8,
+        },
+      ],
+      scannedMessages: 1,
+      latestUid: 8,
       uidvalidity: "123",
     });
   });

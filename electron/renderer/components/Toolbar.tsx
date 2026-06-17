@@ -5,11 +5,12 @@ type Props = {
   email: string;
   onRefresh(): void;
   onScanAll(): void;
+  onClearCache(): void;
   onCheckUpdate(): void;
   onEditSettings(): void;
 };
 
-export function Toolbar({ disabled, email, onRefresh, onScanAll, onCheckUpdate, onEditSettings }: Props) {
+export function Toolbar({ disabled, email, onRefresh, onScanAll, onClearCache, onCheckUpdate, onEditSettings }: Props) {
   return (
     <section className="panel toolbar" role="region" aria-label="邮箱工具栏">
       <div className="toolbar-title">
@@ -25,11 +26,14 @@ export function Toolbar({ disabled, email, onRefresh, onScanAll, onCheckUpdate, 
         <Button appearance="primary" disabled={disabled} onClick={onRefresh}>
           刷新
         </Button>
-        <Button disabled={disabled} onClick={onScanAll}>
-          扫描全部邮件
-        </Button>
-        <Button disabled={disabled} onClick={onCheckUpdate}>
-          检查更新
+      <Button disabled={disabled} onClick={onScanAll}>
+        扫描全部邮件
+      </Button>
+      <Button disabled={disabled} onClick={onClearCache}>
+        清空缓存
+      </Button>
+      <Button disabled={disabled} onClick={onCheckUpdate}>
+        检查更新
         </Button>
         <Button disabled={disabled} onClick={onEditSettings}>
           修改邮箱设置

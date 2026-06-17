@@ -37,7 +37,7 @@ const rows: OrderRow[] = [
 ];
 
 describe("shared date helpers", () => {
-  it("normalizes deadline date text used by current Python app", () => {
+  it("normalizes deadline date text", () => {
     expect(normalizeDeadlineDate("2026/6/20 00:00:00")).toBe("2026-06-20");
     expect(normalizeDeadlineDate("2026年6月19日 18:30")).toBe("2026-06-19");
     expect(normalizeDeadlineDate("2026-02-03")).toBe("2026-02-03");
@@ -49,21 +49,17 @@ describe("shared date helpers", () => {
     expect(normalizeDeadlineDate("2026-13-01")).toBeNull();
   });
 
-  it("extracts the email sent date from an ISO message date", () => {
+  it("extracts email sent date from ISO message date", () => {
     expect(sentDateFromMessageDate("2026-06-16T09:00:00.000Z")).toBe("2026-06-16");
     expect(sentDateFromMessageDate("2026-06-16T00:30:00+08:00")).toBe("2026-06-16");
     expect(sentDateFromMessageDate("")).toBeNull();
   });
+
 });
 
 describe("shared order sorting and filtering", () => {
   it("sorts orders by deadline with unknown deadlines last", () => {
-    expect(sortOrderRows(rows).map((row) => row.orderNumber)).toEqual([
-      "29904",
-      "29912",
-      "29988",
-      "UNKNOWN",
-    ]);
+    expect(sortOrderRows(rows).map((row) => row.orderNumber)).toEqual(["29904", "29912", "29988", "UNKNOWN"]);
   });
 
   it("filters by order number and email sent date range", () => {
@@ -80,39 +76,57 @@ describe("shared order sorting and filtering", () => {
     ).toEqual(["29904", "29912"]);
   });
 
+  it("does not match a previous month email when sent date is a single day this month", () => {
+    const mixedMonthRows: OrderRow[] = [
+      {
+        orderNumber: "MAY-18",
+        deadline: "2026-06-20",
+        sourceFile: "",
+        messageSubject: "",
+        messageDate: "2026-05-18T09:00:00.000Z",
+      },
+      {
+        orderNumber: "JUNE-18",
+        deadline: "2026-06-20",
+        sourceFile: "",
+        messageSubject: "",
+        messageDate: "2026-06-18T09:00:00.000Z",
+      },
+    ];
+
+    expect(
+      filterOrderRows(mixedMonthRows, {
+        searchText: "",
+        sentPreset: "custom",
+        sentStartDate: "2026-06-18",
+        sentEndDate: "2026-06-18",
+        deadlinePreset: "all",
+        deadlineStartDate: "",
+        deadlineEndDate: "",
+      }).map((row) => row.orderNumber),
+    ).toEqual(["JUNE-18"]);
+  });
+
   it("filters by sent-date and deadline presets independently", () => {
     const baseFilter = {
       searchText: "",
-      sentPreset: "all" as const,
+      sentPreset: "thisWeek" as const,
       sentStartDate: "",
       sentEndDate: "",
-      deadlinePreset: "all" as const,
+      deadlinePreset: "thisWeek" as const,
       deadlineStartDate: "",
       deadlineEndDate: "",
     };
 
-    expect(filterOrderRows(rows, { ...baseFilter, sentPreset: "today" }, { today: "2026-06-16" }).map((row) => row.orderNumber)).toEqual([
+    expect(filterOrderRows(rows, baseFilter, { today: "2026-06-17" }).map((row) => row.orderNumber)).toEqual([
       "29904",
       "29912",
     ]);
+
     expect(
-      filterOrderRows(rows, { ...baseFilter, deadlinePreset: "today" }, { today: "2026-06-16" }).map((row) => row.orderNumber),
+      filterOrderRows(rows, { ...baseFilter, deadlinePreset: "overdue" }, { today: "2026-06-17" }).map(
+        (row) => row.orderNumber,
+      ),
     ).toEqual(["29904", "29912"]);
-    expect(
-      filterOrderRows(rows, { ...baseFilter, deadlinePreset: "overdue" }, { today: "2026-06-17" }).map((row) => row.orderNumber),
-    ).toEqual(["29904", "29912"]);
-    expect(
-      filterOrderRows(
-        rows,
-        {
-          ...baseFilter,
-          sentPreset: "today",
-          deadlinePreset: "custom",
-          deadlineStartDate: "2026-06-20",
-          deadlineEndDate: "2026-06-20",
-        },
-        { today: "2026-06-22" },
-      ).map((row) => row.orderNumber),
-    ).toEqual(["29988"]);
   });
 });

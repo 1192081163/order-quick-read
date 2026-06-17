@@ -54,14 +54,15 @@ function parseDateFromString(value: string): Date | null {
 }
 
 type DateFilterPickerProps = {
+  className?: string;
   label: string;
   value: string;
   onChange(value: string): void;
 };
 
-function DateFilterPicker({ label, onChange, value }: DateFilterPickerProps) {
+function DateFilterPicker({ className, label, onChange, value }: DateFilterPickerProps) {
   return (
-    <Field label={label}>
+    <Field label={label} className={className}>
       <DatePicker
         allowTextInput
         formatDate={isoFromDate}
@@ -116,11 +117,23 @@ export function FilterBar({ filter, onChange }: Props) {
           onChange={(_event, data) => onChange({ ...filter, searchText: data.value })}
         />
       </Field>
-      <DateFilterPicker label="发送时间" value={filter.sentStartDate} onChange={setSentDate} />
-      <DateFilterPicker label="截止时间" value={filter.deadlineStartDate} onChange={setDeadlineDate} />
-      <Button className="clear-date-filters" onClick={clearDateFilters}>
-        清空时间
-      </Button>
+      <div className="date-filter-group">
+        <DateFilterPicker
+          className="date-filter-field"
+          label="发送时间"
+          value={filter.sentStartDate}
+          onChange={setSentDate}
+        />
+        <DateFilterPicker
+          className="date-filter-field"
+          label="截止时间"
+          value={filter.deadlineStartDate}
+          onChange={setDeadlineDate}
+        />
+        <Button className="clear-date-filters" onClick={clearDateFilters}>
+          清空时间
+        </Button>
+      </div>
     </section>
   );
 }

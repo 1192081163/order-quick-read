@@ -106,14 +106,36 @@ body {
 
 .filter-bar {
   align-items: end;
-  display: grid;
+  display: flex;
+  flex-wrap: wrap;
   gap: 10px;
-  grid-template-columns: minmax(180px, 1.2fr) repeat(4, minmax(130px, 0.75fr));
   padding: 12px 14px;
 }
 
 .filter-search {
-  min-width: 180px;
+  flex: 1 1 320px;
+  max-width: 400px;
+  min-width: 260px;
+}
+
+.date-filter-group {
+  align-items: end;
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.date-filter-field {
+  flex: 0 0 220px;
+  min-width: 220px;
+}
+
+.clear-date-filters {
+  flex: 0 0 auto;
+  min-width: 104px;
+  white-space: nowrap;
+  width: 104px;
 }
 
 .orders-panel {
@@ -172,8 +194,7 @@ body {
 }
 
 @media (max-width: 860px) {
-  .settings-panel,
-  .filter-bar {
+  .settings-panel {
     grid-template-columns: 1fr;
   }
 
@@ -195,5 +216,11 @@ body {
     left: 12px;
     max-width: none;
     right: 12px;
+  }
+}
+
+@media (max-width: 680px) {
+  .date-filter-group {
+    flex: 1 1 100%;
   }
 }

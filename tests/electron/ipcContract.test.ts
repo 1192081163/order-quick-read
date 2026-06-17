@@ -8,6 +8,7 @@ describe("IPC contract", () => {
       loadSettings: "settings:load",
       saveSettings: "settings:save",
       scanOrders: "orders:scan",
+      clearCache: "orders:cache:clear",
       checkUpdates: "updates:check",
       downloadUpdate: "updates:download",
       installUpdate: "updates:install",

@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { loadOrderCache, mergeOrderRows, saveOrderCache } from "../../electron/main/services/orderCache";
+import { clearOrderCache, loadOrderCache, mergeOrderRows, saveOrderCache } from "../../electron/main/services/orderCache";
 import { loadSettings, saveSettings } from "../../electron/main/services/settingsStore";
 import type { OrderRow } from "../../electron/shared/types";
 
@@ -167,5 +167,26 @@ describe("order cache", () => {
 
     await expect(loadOrderCache(missingPath)).resolves.toEqual(emptyCache);
     await expect(loadOrderCache(invalidPath)).resolves.toEqual(emptyCache);
+  });
+
+  it("clears saved order cache", async () => {
+    const cachePath = path.join(tempDir, "order-cache.json");
+    await saveOrderCache(cachePath, {
+      email: "buyer@example.com",
+      uidvalidity: "42",
+      lastUid: 100,
+      rows: [row("PO-1", "2026-06-18")],
+      warnings: [],
+      scannedMessages: 1,
+      parsedAttachments: 1,
+    });
+
+    await clearOrderCache(cachePath);
+
+    await expect(loadOrderCache(cachePath)).resolves.toMatchObject({
+      email: "",
+      lastUid: 0,
+      rows: [],
+    });
   });
 });

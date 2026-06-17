@@ -14,12 +14,21 @@ export type ScanOrdersOptions = {
   client: AttachmentClient;
   fullScan?: boolean;
   sinceUid?: number;
+  sentStartDate?: string;
+  sentEndDate?: string;
   cachePath?: string;
   accountEmail?: string;
   parseAttachment?: ParseAttachment;
 };
 
 export async function scanOrders(options: ScanOrdersOptions): Promise<ScanResult> {
+  if (hasSentDateRange(options)) {
+    return scanMailbox(options, {
+      sinceUid: options.fullScan === false ? options.sinceUid : undefined,
+      scanMode: options.fullScan === false ? "incremental" : "full",
+    });
+  }
+
   if (options.cachePath && options.fullScan === false) {
     return scanIncrementalWithCache(options);
   }
@@ -64,7 +73,10 @@ async function scanMailbox(
   options: ScanOrdersOptions,
   scanOptions: { sinceUid: number | undefined; scanMode: ScanResult["scanMode"] },
 ): Promise<ScanResult> {
-  const batch = await options.client.fetchExcelAttachmentBatch({ sinceUid: scanOptions.sinceUid });
+  const batch = await options.client.fetchExcelAttachmentBatch({
+    sinceUid: scanOptions.sinceUid,
+    ...sentDateFetchOptions(options),
+  });
   const result = parseAttachmentBatch(batch, options.parseAttachment ?? parseExcelAttachment, scanOptions.scanMode);
   await saveCacheIfConfigured(options, batch, result);
   return result;
@@ -93,6 +105,21 @@ function parseOneAttachment(parser: ParseAttachment, attachment: EmailAttachment
   return parser(attachment.filename, attachment.content, attachment.messageSubject, attachment.messageDate);
 }
 
+function sentDateFetchOptions(options: ScanOrdersOptions): Pick<ScanOrdersOptions, "sentStartDate" | "sentEndDate"> {
+  if (!hasSentDateRange(options)) {
+    return {};
+  }
+
+  return {
+    sentStartDate: options.sentStartDate,
+    sentEndDate: options.sentEndDate,
+  };
+}
+
+function hasSentDateRange(options: Pick<ScanOrdersOptions, "sentStartDate" | "sentEndDate">): boolean {
+  return Boolean(options.sentStartDate || options.sentEndDate);
+}
+
 async function saveCacheIfConfigured(
   options: ScanOrdersOptions,
   batch: AttachmentBatch,
@@ -100,7 +127,7 @@ async function saveCacheIfConfigured(
   previousCache?: OrderCache,
 ): Promise<void> {
   const accountEmail = normalizedAccountEmail(options.accountEmail);
-  if (!options.cachePath || !accountEmail) {
+  if (!options.cachePath || !accountEmail || hasSentDateRange(options)) {
     return;
   }
 

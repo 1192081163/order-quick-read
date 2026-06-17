@@ -16,11 +16,7 @@ export function normalizeDeadlineDate(value: string): string | null {
     const day = Number(dayText);
     const date = new Date(Date.UTC(year, month - 1, day));
 
-    if (
-      date.getUTCFullYear() !== year ||
-      date.getUTCMonth() !== month - 1 ||
-      date.getUTCDate() !== day
-    ) {
+    if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) {
       return null;
     }
 
