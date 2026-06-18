@@ -48,7 +48,7 @@ const mailMocks = vi.hoisted(() => {
     connectError: null as Error | null,
     downloads: new Map<string, Buffer>(),
     beforeDownloadMany: null as null | ((range: string, parts: string[]) => Promise<void>),
-    ImapFlow: vi.fn((options: unknown) => {
+    ImapFlow: vi.fn(function ImapFlow(options: unknown) {
       const release = vi.fn();
       const client: MockClient = {
         on: vi.fn(),

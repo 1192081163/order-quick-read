@@ -51,7 +51,13 @@ npm run electron:build:main
 ## 本地打包
 
 ```bash
-npm run electron:build
+npm run electron:pack
+```
+
+快速打包会生成可运行的 app 目录，不生成安装包。正式生成安装包：
+
+```bash
+npm run electron:dist
 ```
 
 产物输出到：
@@ -60,7 +66,7 @@ npm run electron:build
 dist-electron-packages/
 ```
 
-## GitHub Release 下载
+## CI 和发布
 
 推送到 `main` 后，GitHub Actions 会构建并发布：
 
@@ -70,3 +76,24 @@ OrderQuickReadSetup.exe
 
 Windows 用户下载 `OrderQuickReadSetup.exe`，双击安装。
 当前 GitHub Actions 只发布 Windows 安装包。
+
+仓库也包含 CircleCI 配置：`.circleci/config.yml`。CircleCI 流程同样分为测试、Windows
+安装包构建和发布三个 job。发布 job 需要配置 `github-release` context，并在其中提供
+`GH_TOKEN`。
+
+## 安全说明
+
+邮箱地址和授权码保存在本机应用数据目录的 JSON 文件中，当前不会写入 macOS Keychain
+或 Windows Credential Manager。请不要把本地 `settings.json`、`order_cache.json`、
+下载的附件、打包产物或安装包提交到仓库。
+
+如果发现安全问题，请按 `SECURITY.md` 私下报告。
+
+## 参与贡献
+
+开发流程和提交要求见 `CONTRIBUTING.md`。参与讨论和提交代码时请遵守
+`CODE_OF_CONDUCT.md`。
+
+## 开源许可
+
+本项目使用 MIT License，详见 `LICENSE`。

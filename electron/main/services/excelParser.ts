@@ -1,4 +1,4 @@
-import XLSX, { type CellObject } from "xlsx";
+import XLSX, { type CellObject } from "@e965/xlsx";
 
 import type { OrderRow } from "../../shared/types.js";
 

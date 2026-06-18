@@ -1,4 +1,5 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -7,6 +8,21 @@ import { describe, expect, it } from "vitest";
 import packageJson from "../../package.json";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const require = createRequire(import.meta.url);
+const yaml = require("js-yaml") as { load(source: string): unknown };
+
+type CircleCiConfig = {
+  version?: number;
+  orbs?: Record<string, string>;
+  jobs?: Record<string, { executor?: string; docker?: unknown; steps?: unknown[] }>;
+  workflows?: Record<string, { jobs?: unknown[] }>;
+};
+
+function readCircleCiConfig(): CircleCiConfig {
+  const configPath = path.join(repoRoot, ".circleci", "config.yml");
+  expect(existsSync(configPath)).toBe(true);
+  return yaml.load(readFileSync(configPath, "utf-8")) as CircleCiConfig;
+}
 
 describe("Electron tooling", () => {
   it("defines Electron development test commands", () => {
@@ -32,9 +48,10 @@ describe("Electron tooling", () => {
 
   it("keeps renderer-only packages out of production dependencies", () => {
     expect(packageJson.dependencies).toMatchObject({
+      "@e965/xlsx": expect.any(String),
       imapflow: expect.any(String),
-      xlsx: expect.any(String),
     });
+    expect(packageJson.dependencies).not.toHaveProperty("xlsx");
     expect(packageJson.dependencies).not.toHaveProperty("react");
     expect(packageJson.dependencies).not.toHaveProperty("react-dom");
     expect(packageJson.dependencies).not.toHaveProperty("@fluentui/react-components");
@@ -45,6 +62,58 @@ describe("Electron tooling", () => {
       "@fluentui/react-components": expect.any(String),
       "@fluentui/react-datepicker-compat": expect.any(String),
     });
+  });
+
+  it("declares open source project metadata", () => {
+    expect((packageJson as { private?: unknown }).private).toBeUndefined();
+    expect(packageJson.license).toBe("MIT");
+    expect(packageJson.repository).toMatchObject({
+      type: "git",
+      url: "git+https://github.com/1192081163/order-quick-read.git",
+    });
+    expect(packageJson.bugs).toMatchObject({
+      url: "https://github.com/1192081163/order-quick-read/issues",
+    });
+    expect(packageJson.homepage).toBe("https://github.com/1192081163/order-quick-read#readme");
+
+    for (const requiredPath of ["LICENSE", "SECURITY.md", "CONTRIBUTING.md", "CODE_OF_CONDUCT.md"]) {
+      expect(existsSync(path.join(repoRoot, requiredPath))).toBe(true);
+    }
+  });
+
+  it("documents open source security and CI expectations", () => {
+    const readme = readFileSync(path.join(repoRoot, "README.md"), "utf-8");
+    expect(readme).toContain("## 开源许可");
+    expect(readme).toContain("## 安全说明");
+    expect(readme).toContain("npm run electron:pack");
+    expect(readme).toContain("CircleCI");
+  });
+
+  it("defines CircleCI test build and release jobs", () => {
+    const config = readCircleCiConfig();
+    expect(config.version).toBe(2.1);
+    expect(config.orbs?.win).toMatch(/^circleci\/windows@/);
+    expect(config.jobs).toHaveProperty("test-electron");
+    expect(config.jobs).toHaveProperty("build-windows");
+    expect(config.jobs).toHaveProperty("publish-release");
+    expect(config.jobs?.["build-windows"]?.executor).toBe("win/server-2022");
+
+    const workflowJobs = config.workflows?.build_and_release?.jobs ?? [];
+    expect(workflowJobs).toContain("test-electron");
+    expect(workflowJobs).toContain("build-windows");
+    expect(workflowJobs).toContainEqual({
+      "publish-release": {
+        context: "github-release",
+        filters: { branches: { only: "main" } },
+        requires: ["test-electron", "build-windows"],
+      },
+    });
+  });
+
+  it("keeps electron-builder packaging separate from release publishing", () => {
+    expect((packageJson.build as { publish?: unknown }).publish).toBeUndefined();
+    expect(packageJson.scripts["electron:pack"]).toContain("--publish never");
+    expect(packageJson.scripts["electron:dist"]).toContain("--publish never");
   });
 
   it("keeps Electron source compiled entry paths aligned", () => {

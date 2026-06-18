@@ -60,7 +60,9 @@ describe("IPC contract", () => {
     }));
     vi.doMock("../../electron/main/services/orderScanner.js", () => ({ scanOrders }));
     vi.doMock("../../electron/main/services/mailClient.js", () => ({
-      ImapAttachmentClient: vi.fn(() => ({ close: vi.fn() })),
+      ImapAttachmentClient: vi.fn(function ImapAttachmentClient() {
+        return { close: vi.fn() };
+      }),
     }));
     vi.doMock("../../electron/main/services/notifier.js", () => ({
       countOrderChanges: vi.fn(),

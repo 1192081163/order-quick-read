@@ -8,6 +8,7 @@ import { countOrderChanges } from "../../electron/main/services/notifier";
 import {
   downloadUpdateAsset,
   GITHUB_RELEASE_API_URL,
+  githubReleaseApiUrlFromPackageJson,
   selectReleaseAsset,
   updateInfoFromReleasePayload,
 } from "../../electron/main/services/updater";
@@ -37,6 +38,15 @@ function row(orderNumber: string, deadline: string): OrderRow {
 describe("Electron updater", () => {
   it("uses the renamed repository", () => {
     expect(GITHUB_RELEASE_API_URL).toBe("https://api.github.com/repos/1192081163/order-quick-read/releases/latest");
+  });
+
+  it("derives release API URLs from package repository metadata", () => {
+    expect(githubReleaseApiUrlFromPackageJson({ repository: { url: "git+https://github.com/acme/orders.git" } })).toBe(
+      "https://api.github.com/repos/acme/orders/releases/latest",
+    );
+    expect(githubReleaseApiUrlFromPackageJson({ repository: "https://github.com/acme/orders" })).toBe(
+      "https://api.github.com/repos/acme/orders/releases/latest",
+    );
   });
 
   it("selects Windows installer asset", () => {

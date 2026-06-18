@@ -6,9 +6,14 @@ import type { UpdateInfo } from "../../shared/types.js";
 import { CURRENT_RELEASE_TAG } from "../buildInfo.js";
 
 const require = createRequire(import.meta.url);
-const packageJson = require("../../../package.json") as { version?: string };
+type PackageMetadata = {
+  version?: string;
+  repository?: string | { url?: string };
+};
 
-export const GITHUB_RELEASE_API_URL = "https://api.github.com/repos/1192081163/order-quick-read/releases/latest";
+const packageJson = require("../../../package.json") as PackageMetadata;
+
+export const GITHUB_RELEASE_API_URL = githubReleaseApiUrlFromPackageJson(packageJson);
 const USER_AGENT = `OrderQuickRead/${packageJson.version ?? "0.1.0"}`;
 
 type ReleaseAsset = {
@@ -21,6 +26,16 @@ type ReleasePayload = {
   html_url?: unknown;
   assets?: unknown;
 };
+
+export function githubReleaseApiUrlFromPackageJson(metadata: PackageMetadata): string {
+  const repository =
+    typeof metadata.repository === "string" ? metadata.repository : stringValue(metadata.repository?.url).trim();
+  const match = repository.match(/github\.com[:/]([^/\s]+)\/([^/\s#]+?)(?:\.git)?(?:[#?].*)?$/i);
+  if (!match) {
+    throw new Error("package.json repository must point to a GitHub repository for update checks.");
+  }
+  return `https://api.github.com/repos/${match[1]}/${match[2]}/releases/latest`;
+}
 
 export function selectReleaseAsset(
   assetNames: string[],
