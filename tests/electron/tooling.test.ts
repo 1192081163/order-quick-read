@@ -1,5 +1,4 @@
 import { existsSync, readFileSync } from "node:fs";
-import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -8,21 +7,6 @@ import { describe, expect, it } from "vitest";
 import packageJson from "../../package.json";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const require = createRequire(import.meta.url);
-const yaml = require("js-yaml") as { load(source: string): unknown };
-
-type CircleCiConfig = {
-  version?: number;
-  orbs?: Record<string, string>;
-  jobs?: Record<string, { executor?: string; docker?: unknown; steps?: unknown[] }>;
-  workflows?: Record<string, { jobs?: unknown[] }>;
-};
-
-function readCircleCiConfig(): CircleCiConfig {
-  const configPath = path.join(repoRoot, ".circleci", "config.yml");
-  expect(existsSync(configPath)).toBe(true);
-  return yaml.load(readFileSync(configPath, "utf-8")) as CircleCiConfig;
-}
 
 describe("Electron tooling", () => {
   it("defines Electron development test commands", () => {
@@ -86,28 +70,13 @@ describe("Electron tooling", () => {
     expect(readme).toContain("## 开源许可");
     expect(readme).toContain("## 安全说明");
     expect(readme).toContain("npm run electron:pack");
-    expect(readme).toContain("CircleCI");
+    expect(readme).toContain("GitHub Actions");
+    expect(readme).not.toContain("CircleCI");
   });
 
-  it("defines CircleCI test build and release jobs", () => {
-    const config = readCircleCiConfig();
-    expect(config.version).toBe(2.1);
-    expect(config.orbs?.win).toMatch(/^circleci\/windows@/);
-    expect(config.jobs).toHaveProperty("test-electron");
-    expect(config.jobs).toHaveProperty("build-windows");
-    expect(config.jobs).toHaveProperty("publish-release");
-    expect(config.jobs?.["build-windows"]?.executor).toBe("win/server-2022");
-
-    const workflowJobs = config.workflows?.build_and_release?.jobs ?? [];
-    expect(workflowJobs).toContain("test-electron");
-    expect(workflowJobs).toContain("build-windows");
-    expect(workflowJobs).toContainEqual({
-      "publish-release": {
-        context: "github-release",
-        filters: { branches: { only: "main" } },
-        requires: ["test-electron", "build-windows"],
-      },
-    });
+  it("uses GitHub Actions as the only CI release workflow", () => {
+    expect(existsSync(path.join(repoRoot, ".github", "workflows", "build.yml"))).toBe(true);
+    expect(existsSync(path.join(repoRoot, ".circleci", "config.yml"))).toBe(false);
   });
 
   it("keeps electron-builder packaging separate from release publishing", () => {

@@ -20,3 +20,5 @@ dist-renderer/
 dist-electron/
 dist-electron-packages/
 coverage/
+.codegraph
+.codegraph/

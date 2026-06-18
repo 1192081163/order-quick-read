@@ -77,10 +77,6 @@ OrderQuickReadSetup.exe
 Windows 用户下载 `OrderQuickReadSetup.exe`，双击安装。
 当前 GitHub Actions 只发布 Windows 安装包。
 
-仓库也包含 CircleCI 配置：`.circleci/config.yml`。CircleCI 流程同样分为测试、Windows
-安装包构建和发布三个 job。发布 job 需要配置 `github-release` context，并在其中提供
-`GH_TOKEN`。
-
 ## 安全说明
 
 邮箱地址和授权码保存在本机应用数据目录的 JSON 文件中，当前不会写入 macOS Keychain
